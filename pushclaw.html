@@ -1,0 +1,1675 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>PlushClaw</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Lilita+One&family=Nunito:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+:root{
+  --pink:#ff4d8d;--cyan:#00d4ff;--purple:#8b5cf6;
+  --yellow:#fbbf24;--green:#34d399;
+  --card:rgba(255,255,255,0.06);--border:rgba(255,255,255,0.12);
+}
+html,body{width:100%;height:100%;overflow:hidden;background:#080614;font-family:'Nunito',sans-serif;color:#fff;}
+
+/* ══ SCREENS ══ */
+.screen{display:none;position:absolute;inset:0;flex-direction:column;}
+.screen.active{display:flex;}
+
+/* ══ MENU ══ */
+#screen-menu{
+  align-items:center;justify-content:center;
+  background:radial-gradient(ellipse 80% 80% at 20% 50%,rgba(139,92,246,0.28) 0%,transparent 60%),
+             radial-gradient(ellipse 60% 60% at 80% 20%,rgba(0,212,255,0.22) 0%,transparent 50%),
+             radial-gradient(ellipse 70% 70% at 50% 110%,rgba(255,77,141,0.22) 0%,transparent 55%),
+             linear-gradient(160deg,#08061a 0%,#120a2a 50%,#080f22 100%);
+}
+.menu-bg-particles{position:absolute;inset:0;overflow:hidden;pointer-events:none;}
+.mp{position:absolute;border-radius:50%;animation:mpFloat linear infinite;}
+@keyframes mpFloat{
+  0%{transform:translateY(0) scale(0) rotate(0deg);opacity:0;}
+  5%{opacity:0.7;}
+  90%{opacity:0.2;}
+  100%{transform:translateY(-105vh) scale(1.4) rotate(360deg);opacity:0;}
+}
+
+.menu-content{
+  position:relative;z-index:2;
+  display:flex;flex-direction:column;align-items:center;gap:22px;
+  animation:menuIn 0.7s cubic-bezier(0.34,1.56,0.64,1) both;
+}
+@keyframes menuIn{from{opacity:0;transform:translateY(32px) scale(0.92);}to{opacity:1;transform:none;}}
+
+/* Machine icon animated */
+.menu-machine-icon{
+  width:110px;height:110px;
+  animation:machFloat 3.2s ease-in-out infinite alternate;
+  filter:drop-shadow(0 0 28px rgba(139,92,246,0.6));
+}
+@keyframes machFloat{
+  from{transform:translateY(0) rotate(-2deg);}
+  to{transform:translateY(-12px) rotate(2deg);}
+}
+
+.logo-main{
+  font-family:'Lilita One',cursive;
+  font-size:clamp(3rem,8vw,5.8rem);
+  background:linear-gradient(135deg,#ff6eb4 0%,#c084fc 40%,#38bdf8 100%);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+  letter-spacing:1px;
+  filter:drop-shadow(0 3px 24px rgba(192,132,252,0.45));
+  animation:logoShimmer 4s ease-in-out infinite alternate;
+}
+@keyframes logoShimmer{
+  from{filter:drop-shadow(0 3px 18px rgba(255,110,180,0.4));}
+  to{filter:drop-shadow(0 3px 28px rgba(56,189,248,0.55));}
+}
+.logo-sub{
+  font-size:0.65rem;letter-spacing:5px;text-transform:uppercase;
+  color:rgba(255,255,255,0.35);margin-top:4px;font-weight:700;text-align:center;
+}
+
+.coins-badge{
+  display:flex;align-items:center;gap:8px;
+  background:rgba(251,191,36,0.1);border:1.5px solid rgba(251,191,36,0.3);
+  border-radius:50px;padding:8px 22px;font-weight:800;font-size:1.1rem;color:var(--yellow);
+  animation:badgePulse 2.5s ease-in-out infinite;
+}
+@keyframes badgePulse{
+  0%,100%{box-shadow:0 0 0 0 rgba(251,191,36,0);}
+  50%{box-shadow:0 0 0 6px rgba(251,191,36,0.08);}
+}
+
+.menu-btns{display:flex;flex-direction:column;gap:10px;width:260px;}
+.mbtn{
+  display:flex;align-items:center;gap:13px;
+  padding:14px 22px;border-radius:16px;
+  border:1.5px solid var(--border);background:var(--card);
+  color:#fff;font-family:'Nunito',sans-serif;font-weight:800;font-size:1rem;
+  cursor:pointer;transition:all 0.25s cubic-bezier(0.34,1.56,0.64,1);
+  backdrop-filter:blur(14px);white-space:nowrap;text-align:left;
+  letter-spacing:0.3px;
+}
+.mbtn:hover{transform:translateX(6px) scale(1.04);border-color:rgba(255,255,255,0.28);background:rgba(255,255,255,0.1);}
+.mbtn:active{transform:scale(0.97);}
+.mbtn.primary{
+  background:linear-gradient(135deg,rgba(255,77,141,0.45),rgba(139,92,246,0.38));
+  border-color:rgba(255,77,141,0.55);
+  box-shadow:0 5px 28px rgba(255,77,141,0.25),inset 0 1px 0 rgba(255,255,255,0.14);
+}
+.mbtn svg{width:20px;height:20px;flex-shrink:0;}
+.menu-stat{font-size:0.78rem;color:rgba(255,255,255,0.35);display:flex;align-items:center;gap:5px;}
+
+/* ══ GAME ══ */
+#screen-game{background:#060410;flex-direction:column;}
+.game-hud{
+  flex-shrink:0;
+  display:flex;align-items:center;padding:8px 16px;gap:14px;
+  background:rgba(6,4,16,0.85);backdrop-filter:blur(22px);
+  border-bottom:1px solid var(--border);z-index:50;
+}
+.hud-back{
+  width:34px;height:34px;background:rgba(255,255,255,0.08);border:1px solid var(--border);
+  border-radius:11px;cursor:pointer;display:flex;align-items:center;justify-content:center;
+  transition:all 0.18s;flex-shrink:0;
+}
+.hud-back:hover{background:rgba(255,255,255,0.15);}
+.hud-mach{font-family:'Lilita One',cursive;font-size:1.05rem;color:var(--cyan);flex:1;}
+.hud-coins{display:flex;align-items:center;gap:6px;font-weight:800;font-size:1rem;color:var(--yellow);}
+
+#three-canvas{flex:1;width:100%;min-height:0;display:block;}
+
+/* ══ ARCADE PANEL ══ */
+.arcade-panel{
+  flex-shrink:0;
+  position:relative;z-index:50;
+  background:linear-gradient(180deg,#e8a20a 0%,#c98600 6%,#b57800 100%);
+  border-top:3px solid #8a5c00;
+  padding:8px 16px 10px;
+  display:flex;align-items:center;justify-content:center;gap:18px;
+  box-shadow:inset 0 2px 0 rgba(255,220,80,0.4),0 -4px 20px rgba(0,0,0,0.6);
+}
+.arcade-panel::before{
+  content:'';position:absolute;inset:0;
+  background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='4' height='4'%3E%3Ccircle cx='1' cy='1' r='0.6' fill='rgba(0,0,0,0.12)'/%3E%3C/svg%3E");
+  pointer-events:none;
+}
+
+/* Joystick assembly */
+.joy-assembly{display:flex;flex-direction:column;align-items:center;gap:3px;}
+.joy-label-txt{font-size:0.48rem;letter-spacing:2px;text-transform:uppercase;color:rgba(0,0,0,0.55);font-weight:800;}
+.joy-base{
+  width:72px;height:72px;position:relative;cursor:grab;touch-action:none;
+  background:radial-gradient(circle at 38% 32%,#4a3a6a,#1c1030);
+  border-radius:50%;border:3px solid #0e0818;
+  box-shadow:0 5px 0 rgba(0,0,0,0.7),0 6px 14px rgba(0,0,0,0.7),inset 0 2px 4px rgba(255,255,255,0.06);
+}
+.joy-base:active{cursor:grabbing;}
+.joy-stick{
+  position:absolute;width:32px;height:32px;
+  background:radial-gradient(circle at 33% 28%,#9480cc,#3d2c6e);
+  border-radius:50%;top:50%;left:50%;
+  transform:translate(-50%,-50%);
+  box-shadow:0 3px 8px rgba(0,0,0,0.6),0 0 12px rgba(139,92,246,0.3),inset 0 1px 2px rgba(255,255,255,0.2);
+  border:2px solid rgba(255,255,255,0.18);pointer-events:none;transition:transform 0.05s;
+}
+.joy-stick::after{content:'';position:absolute;top:6px;left:7px;width:11px;height:4px;background:rgba(255,255,255,0.2);border-radius:50%;transform:rotate(-25deg);}
+
+/* Center group */
+.center-group{display:flex;flex-direction:column;align-items:center;gap:5px;}
+
+/* Drop button */
+.drop-btn-wrap{display:flex;flex-direction:column;align-items:center;gap:3px;}
+.drop-base{
+  width:60px;height:60px;position:relative;cursor:pointer;
+  background:radial-gradient(circle at 40% 30%,#ff6b6b,#cc0000);
+  border-radius:50%;border:3px solid #880000;
+  box-shadow:0 5px 0 #5c0000,0 7px 16px rgba(255,0,0,0.4),inset 0 2px 4px rgba(255,255,255,0.25);
+  transition:all 0.08s;-webkit-tap-highlight-color:transparent;
+}
+.drop-base:active,.drop-base.pressed{transform:translateY(4px);box-shadow:0 1px 0 #5c0000,0 2px 8px rgba(255,0,0,0.3);}
+.drop-base::after{content:'';position:absolute;top:8px;left:10px;width:15px;height:6px;background:rgba(255,255,255,0.28);border-radius:50%;transform:rotate(-28deg);}
+.drop-label-txt{font-size:0.48rem;letter-spacing:2px;text-transform:uppercase;color:rgba(0,0,0,0.55);font-weight:800;}
+
+/* Small buttons */
+.small-btn-wrap{display:flex;flex-direction:column;align-items:center;gap:3px;}
+.small-btn{
+  width:26px;height:26px;
+  background:radial-gradient(circle at 38% 30%,#ff5577,#cc1133);
+  border-radius:50%;border:2px solid #880022;
+  box-shadow:0 3px 0 #550011,0 4px 8px rgba(255,0,80,0.3),inset 0 1px 2px rgba(255,255,255,0.2);
+  cursor:pointer;transition:all 0.08s;
+}
+.small-btn:active{transform:translateY(2px);box-shadow:0 1px 0 #550011;}
+.small-btn-txt{font-size:0.42rem;letter-spacing:1px;text-transform:uppercase;color:rgba(0,0,0,0.4);font-weight:800;}
+
+/* Display */
+.arcade-display{
+  background:#0a1a0a;border:2px solid #1a3a1a;border-radius:3px;
+  padding:3px 7px;text-align:center;
+  box-shadow:inset 0 2px 6px rgba(0,0,0,0.8),0 0 8px rgba(0,255,0,0.1);
+}
+/* View buttons */
+.view-col{display:flex;flex-direction:column;gap:4px;align-items:center;}
+.view-btn-arcade{
+  background:rgba(0,0,0,0.3);border:1.5px solid rgba(0,0,0,0.5);
+  border-radius:6px;padding:5px 10px;font-size:0.64rem;font-weight:800;
+  color:rgba(255,255,255,0.75);cursor:pointer;transition:all 0.15s;white-space:nowrap;
+  display:flex;align-items:center;gap:4px;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,0.1),0 2px 0 rgba(0,0,0,0.4);
+  letter-spacing:0.5px;
+}
+.view-btn-arcade:hover{background:rgba(0,212,255,0.2);color:#00d4ff;border-color:rgba(0,212,255,0.4);}
+.view-btn-arcade:active{transform:translateY(1px);}
+.view-col-label{font-size:0.5rem;letter-spacing:2px;text-transform:uppercase;color:rgba(0,0,0,0.4);font-weight:800;}
+
+/* ══ SUB-SCREENS ══ */
+.subscreen{flex-direction:column;align-items:center;overflow:hidden;}
+.subscreen-inner{
+  width:100%;height:100%;overflow-y:auto;
+  padding:72px 18px 28px;
+  display:flex;flex-direction:column;align-items:center;gap:18px;
+  position:relative;z-index:1;
+}
+.sub-bg{
+  position:absolute;inset:0;
+  background:radial-gradient(ellipse at 30% 20%,rgba(139,92,246,0.1) 0%,transparent 60%),
+             linear-gradient(160deg,#080614 0%,#0e0a20 100%);
+}
+.sub-topbar{
+  position:absolute;top:0;left:0;right:0;z-index:10;
+  display:flex;align-items:center;gap:12px;padding:13px 16px;
+  background:rgba(8,6,20,0.85);backdrop-filter:blur(22px);
+  border-bottom:1px solid var(--border);
+}
+.sub-title{
+  font-family:'Lilita One',cursive;font-size:1.2rem;
+  background:linear-gradient(135deg,var(--cyan),var(--purple));
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+}
+
+/* ══ MACHINES ══ */
+.mach-list{display:flex;flex-direction:column;gap:11px;width:100%;max-width:520px;}
+.mach-card{
+  background:var(--card);border:1.5px solid var(--border);border-radius:18px;
+  padding:15px 18px;display:flex;align-items:center;gap:15px;
+  backdrop-filter:blur(10px);transition:all 0.22s;
+}
+.mach-card:not(.locked):hover{transform:translateY(-2px);border-color:rgba(255,255,255,0.22);}
+.mach-card.locked{opacity:0.4;filter:grayscale(0.6);}
+.mach-icon{width:54px;height:54px;flex-shrink:0;}
+.mach-info h3{font-family:'Lilita One',cursive;font-size:1rem;color:var(--cyan);}
+.mach-info p{font-size:0.73rem;color:rgba(255,255,255,0.5);margin-top:2px;}
+.mach-req{font-size:0.68rem;color:var(--yellow);margin-top:4px;font-weight:700;}
+.mach-play{
+  padding:9px 18px;border-radius:12px;
+  background:linear-gradient(135deg,rgba(255,77,141,0.4),rgba(139,92,246,0.35));
+  border:1px solid rgba(255,77,141,0.45);color:#fff;
+  font-family:'Nunito',sans-serif;font-weight:800;font-size:0.84rem;
+  cursor:pointer;transition:all 0.18s;white-space:nowrap;margin-left:auto;
+}
+.mach-play:hover{transform:scale(1.06);}
+
+/* ══ COLLECTION ══ */
+.coll-progress-bar{height:5px;background:rgba(255,255,255,0.08);border-radius:3px;overflow:hidden;margin-top:5px;width:100%;max-width:860px;}
+.coll-progress-fill{height:100%;background:linear-gradient(90deg,var(--pink),var(--purple));border-radius:3px;transition:width 0.5s;}
+.coll-filters{display:flex;gap:7px;flex-wrap:wrap;justify-content:center;}
+.cfilt{
+  padding:5px 14px;border-radius:18px;font-size:0.76rem;font-weight:800;
+  background:var(--card);border:1px solid var(--border);
+  cursor:pointer;transition:all 0.18s;color:rgba(255,255,255,0.55);
+}
+.cfilt.active{background:rgba(255,77,141,0.22);border-color:var(--pink);color:#fff;}
+.coll-grid{
+  display:grid;grid-template-columns:repeat(auto-fill,minmax(88px,1fr));
+  gap:9px;width:100%;max-width:860px;
+}
+.coll-card{
+  background:var(--card);border:1.5px solid var(--border);border-radius:13px;
+  padding:9px 5px;display:flex;flex-direction:column;align-items:center;gap:4px;
+  position:relative;transition:all 0.18s;
+}
+.coll-card.owned{border-color:rgba(52,211,153,0.38);}
+.coll-card.locked{filter:brightness(0.28) saturate(0);}
+.coll-card:not(.locked):hover{transform:translateY(-2px) scale(1.04);}
+.coll-icon{width:50px;height:50px;}
+.coll-name{font-size:0.58rem;text-align:center;color:rgba(255,255,255,0.72);font-weight:700;line-height:1.2;}
+.rarity-dot{position:absolute;top:5px;right:5px;width:7px;height:7px;border-radius:50%;}
+.r-common{background:#777}.r-uncommon{background:var(--green)}.r-rare{background:var(--cyan)}
+.r-epic{background:var(--purple)}.r-legendary{background:var(--yellow);box-shadow:0 0 5px var(--yellow)}
+.owned-ct{font-size:0.56rem;color:var(--green);font-weight:800;}
+
+/* ══ SHOP ══ */
+.shop-coins-row{display:flex;align-items:center;gap:7px;font-weight:800;font-size:1.05rem;color:var(--yellow);}
+.shop-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(148px,1fr));gap:13px;width:100%;max-width:700px;}
+.shop-card{
+  background:var(--card);border:1.5px solid var(--border);border-radius:16px;
+  padding:16px 12px;display:flex;flex-direction:column;align-items:center;gap:7px;
+  backdrop-filter:blur(10px);
+}
+.shop-icon{width:68px;height:68px;}
+.shop-name{font-weight:800;font-size:0.88rem;text-align:center;font-family:'Lilita One',cursive;}
+.shop-desc{font-size:0.68rem;color:rgba(255,255,255,0.48);text-align:center;}
+.shop-price{display:flex;align-items:center;gap:4px;font-weight:800;font-size:0.86rem;color:var(--yellow);}
+.shop-buy{
+  padding:8px 18px;border-radius:10px;
+  background:rgba(255,77,141,0.22);border:1px solid rgba(255,77,141,0.38);
+  color:#fff;font-weight:800;font-size:0.8rem;cursor:pointer;transition:all 0.18s;
+}
+.shop-buy:hover:not(:disabled){background:rgba(255,77,141,0.42);}
+.shop-buy:disabled{opacity:0.32;cursor:not-allowed;}
+
+/* ══ WIN POPUP ══ */
+#win-popup{
+  position:fixed;inset:0;z-index:999;
+  display:flex;align-items:center;justify-content:center;
+  background:rgba(0,0,0,0);pointer-events:none;transition:background 0.3s;
+}
+#win-popup.show{background:rgba(0,0,0,0.7);pointer-events:all;}
+.win-card{
+  background:linear-gradient(135deg,rgba(18,10,40,0.98),rgba(10,6,28,0.98));
+  border:2px solid rgba(255,77,141,0.52);border-radius:28px;
+  padding:36px 50px;display:flex;flex-direction:column;align-items:center;gap:13px;
+  backdrop-filter:blur(30px);
+  box-shadow:0 0 60px rgba(255,77,141,0.3),0 22px 60px rgba(0,0,0,0.6);
+  transform:scale(0);transition:transform 0.44s cubic-bezier(0.34,1.56,0.64,1);text-align:center;
+}
+#win-popup.show .win-card{transform:scale(1);}
+.win-title{font-family:'Lilita One',cursive;font-size:1.9rem;color:var(--pink);}
+.win-icon{width:96px;height:96px;}
+.win-name{font-size:1.2rem;font-weight:800;font-family:'Lilita One',cursive;}
+.win-rarity{font-size:0.82rem;color:rgba(255,255,255,0.5);}
+.win-coins{display:flex;align-items:center;gap:6px;color:var(--yellow);font-weight:800;font-size:1rem;}
+.win-close{
+  padding:12px 32px;border-radius:14px;
+  background:linear-gradient(135deg,rgba(255,77,141,0.42),rgba(139,92,246,0.35));
+  border:1.5px solid rgba(255,77,141,0.45);color:#fff;
+  font-family:'Nunito',sans-serif;font-weight:800;font-size:1rem;
+  cursor:pointer;transition:all 0.18s;margin-top:4px;
+}
+.win-close:hover{transform:scale(1.05);}
+
+/* ══ TOAST ══ */
+#toast{
+  position:fixed;bottom:180px;left:50%;
+  transform:translateX(-50%) translateY(10px);
+  background:rgba(12,8,28,0.96);border:1px solid var(--border);
+  border-radius:20px;padding:9px 22px;font-size:0.88rem;font-weight:700;
+  z-index:900;opacity:0;transition:all 0.28s;
+  backdrop-filter:blur(20px);pointer-events:none;white-space:nowrap;
+}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+
+/* ══ PARTICLES ══ */
+#particles-canvas{position:fixed;inset:0;pointer-events:none;z-index:800;display:none;}
+#particles-canvas.active{display:block;}
+
+::-webkit-scrollbar{width:4px;}
+::-webkit-scrollbar-track{background:transparent;}
+::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.14);border-radius:2px;}
+</style>
+</head>
+<body>
+
+<canvas id="particles-canvas"></canvas>
+<div id="toast"></div>
+
+<!-- ══ MENU ══ -->
+<div class="screen active" id="screen-menu">
+  <div class="menu-bg-particles" id="bg-particles"></div>
+  <div class="menu-content">
+    <!-- Animated claw machine SVG icon -->
+    <svg class="menu-machine-icon" viewBox="0 0 110 130" fill="none">
+      <!-- Machine body -->
+      <rect x="12" y="30" width="86" height="85" rx="7" fill="rgba(139,92,246,0.12)" stroke="rgba(139,92,246,0.4)" stroke-width="1.5"/>
+      <rect x="12" y="30" width="86" height="14" rx="7" fill="rgba(139,92,246,0.28)"/>
+      <!-- Poles -->
+      <line x1="12" y1="44" x2="12" y2="115" stroke="rgba(255,110,180,0.85)" stroke-width="3.5" stroke-linecap="round"/>
+      <line x1="98" y1="44" x2="98" y2="115" stroke="rgba(255,110,180,0.85)" stroke-width="3.5" stroke-linecap="round"/>
+      <!-- Neon dots top -->
+      <circle cx="12" cy="30" r="3.5" fill="rgba(255,110,180,0.9)"/>
+      <circle cx="98" cy="30" r="3.5" fill="rgba(0,212,255,0.9)"/>
+      <!-- Cable -->
+      <line x1="55" y1="44" x2="55" y2="72" stroke="rgba(0,212,255,0.95)" stroke-width="2.5" stroke-linecap="round"/>
+      <!-- Claw head -->
+      <circle cx="55" cy="73" r="5.5" fill="rgba(0,212,255,0.85)"/>
+      <!-- Claw tines -->
+      <path d="M55 77 L44 90" stroke="rgba(0,212,255,0.9)" stroke-width="2.5" stroke-linecap="round"/>
+      <path d="M55 77 L55 93" stroke="rgba(0,212,255,0.9)" stroke-width="2.5" stroke-linecap="round"/>
+      <path d="M55 77 L66 90" stroke="rgba(0,212,255,0.9)" stroke-width="2.5" stroke-linecap="round"/>
+      <!-- Plushies -->
+      <circle cx="28" cy="104" r="8" fill="rgba(255,110,180,0.65)" stroke="rgba(255,110,180,0.9)" stroke-width="1"/>
+      <circle cx="46" cy="108" r="6.5" fill="rgba(52,211,153,0.65)" stroke="rgba(52,211,153,0.9)" stroke-width="1"/>
+      <circle cx="65" cy="106" r="7.5" fill="rgba(0,212,255,0.65)" stroke="rgba(0,212,255,0.9)" stroke-width="1"/>
+      <circle cx="83" cy="109" r="5.5" fill="rgba(251,191,36,0.65)" stroke="rgba(251,191,36,0.9)" stroke-width="1"/>
+      <!-- Floor -->
+      <rect x="12" y="114" width="86" height="1.5" fill="rgba(255,255,255,0.15)"/>
+      <!-- Bottom panel -->
+      <rect x="12" y="116" width="86" height="14" rx="0 0 7 7" fill="rgba(139,92,246,0.18)"/>
+      <!-- Coin slot -->
+      <rect x="38" y="120" width="34" height="6" rx="3" fill="rgba(0,0,0,0.4)" stroke="rgba(255,255,255,0.2)" stroke-width="1"/>
+    </svg>
+
+    <div>
+      <div class="logo-main">PlushClaw</div>
+      <div class="logo-sub">La macchinetta dei sogni</div>
+    </div>
+
+    <div class="coins-badge">
+      <svg width="20" height="20" viewBox="0 0 20 20"><circle cx="10" cy="10" r="9" fill="#fbbf24" stroke="#d97706" stroke-width="1.5"/><text x="10" y="13.5" text-anchor="middle" font-size="8.5" font-weight="bold" fill="#78350f" font-family="sans-serif">$</text></svg>
+      <span id="menu-coins">0</span> monete
+    </div>
+
+    <div class="menu-btns">
+      <button class="mbtn primary" onclick="showScreen('game')">
+        <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="6,4 20,12 6,20"/></svg>Gioca
+      </button>
+      <button class="mbtn" onclick="showScreen('machines')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><circle cx="8" cy="14" r="1.5" fill="currentColor"/><circle cx="14" cy="16" r="1.5" fill="currentColor"/></svg>Macchinette
+      </button>
+      <button class="mbtn" onclick="showScreen('collection')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="9" height="9" rx="1.5"/><rect x="13" y="2" width="9" height="9" rx="1.5"/><rect x="2" y="13" width="9" height="9" rx="1.5"/><rect x="13" y="13" width="9" height="9" rx="1.5"/></svg>Collezione
+      </button>
+      <button class="mbtn" onclick="showScreen('shop')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 01-8 0"/></svg>Shop
+      </button>
+    </div>
+    <div class="menu-stat">
+      <svg width="12" height="12" viewBox="0 0 12 12"><polygon points="6,1 7.5,4.5 11,4.5 8.5,7 9.5,10.5 6,8.5 2.5,10.5 3.5,7 1,4.5 4.5,4.5" fill="#fbbf24"/></svg>
+      <span id="menu-collected">0</span>/200 peluche raccolti
+    </div>
+  </div>
+</div>
+
+<!-- ══ GAME ══ -->
+<div class="screen" id="screen-game">
+  <div class="game-hud">
+    <div class="hud-back" onclick="showScreen('menu')">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round"><polyline points="10,3 5,8 10,13"/></svg>
+    </div>
+    <div class="hud-mach" id="hud-mach-name">Classica Rosa</div>
+    <div class="hud-coins">
+      <svg width="17" height="17" viewBox="0 0 20 20"><circle cx="10" cy="10" r="9" fill="#fbbf24" stroke="#d97706" stroke-width="1.5"/><text x="10" y="13.5" text-anchor="middle" font-size="8" font-weight="bold" fill="#78350f" font-family="sans-serif">$</text></svg>
+      <span id="hud-coins">0</span>
+    </div>
+  </div>
+
+  <canvas id="three-canvas"></canvas>
+
+  <!-- Realistic arcade control panel -->
+  <div class="arcade-panel">
+    <!-- Joystick -->
+    <div class="joy-assembly">
+      <div class="joy-label-txt">MUOVI</div>
+      <div class="joy-base" id="joy-base"><div class="joy-stick" id="joy-stick"></div></div>
+    </div>
+
+    <!-- Center: display + drop button + small btn -->
+    <div class="center-group">
+      <div class="arcade-display">
+        <div class="arcade-display-text" id="arcade-display">READY</div>
+      </div>
+      <div class="drop-btn-wrap">
+        <div class="drop-base" id="btn-drop"></div>
+        <div class="drop-label-txt">LANCIA</div>
+      </div>
+      <div style="display:flex;gap:10px;align-items:center;">
+        <div class="small-btn-wrap">
+          <div class="small-btn"></div>
+          <div class="small-btn-txt">SFX</div>
+        </div>
+        <div class="small-btn-wrap">
+          <div class="small-btn" style="background:radial-gradient(circle at 38% 30%,#4488ff,#1133cc);border-color:#001188;box-shadow:0 4px 0 #000088,0 5px 12px rgba(0,100,255,0.3),inset 0 1px 2px rgba(255,255,255,0.2);"></div>
+          <div class="small-btn-txt">INFO</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- View buttons -->
+    <div class="view-col">
+      <div class="view-col-label">VISTA</div>
+      <button class="view-btn-arcade" id="btn-view-left">
+        <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 2L3 6l5 4"/></svg>Sinistra
+      </button>
+      <button class="view-btn-arcade" id="btn-view-front">
+        <svg width="10" height="10" viewBox="0 0 12 12" fill="currentColor"><circle cx="6" cy="6" r="2.8"/><circle cx="6" cy="6" r="1.1" fill="#060410"/></svg>Front
+      </button>
+      <button class="view-btn-arcade" id="btn-view-right">
+        <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 2l5 4-5 4"/></svg>Destra
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ MACHINES ══ -->
+<div class="screen subscreen" id="screen-machines">
+  <div class="sub-bg"></div>
+  <div class="sub-topbar">
+    <div class="hud-back" onclick="showScreen('menu')"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round"><polyline points="10,3 5,8 10,13"/></svg></div>
+    <div class="sub-title">Macchinette</div>
+  </div>
+  <div class="subscreen-inner">
+    <div style="color:rgba(255,255,255,0.4);font-size:0.8rem;text-align:center">Sblocca nuove macchinette raccogliendo peluche!</div>
+    <div class="mach-list" id="machines-list"></div>
+  </div>
+</div>
+
+<!-- ══ COLLECTION ══ -->
+<div class="screen subscreen" id="screen-collection">
+  <div class="sub-bg"></div>
+  <div class="sub-topbar">
+    <div class="hud-back" onclick="showScreen('menu')"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round"><polyline points="10,3 5,8 10,13"/></svg></div>
+    <div class="sub-title">Collezione</div>
+    <div style="margin-left:auto;font-size:0.78rem;color:rgba(255,255,255,0.45)"><span id="coll-count">0</span>/200</div>
+  </div>
+  <div class="subscreen-inner">
+    <div class="coll-progress-bar"><div class="coll-progress-fill" id="coll-fill" style="width:0%"></div></div>
+    <div class="coll-filters" id="coll-filters">
+      <button class="cfilt active" data-f="all">Tutti</button>
+      <button class="cfilt" data-f="common">Comuni</button>
+      <button class="cfilt" data-f="uncommon">Non comuni</button>
+      <button class="cfilt" data-f="rare">Rari</button>
+      <button class="cfilt" data-f="epic">Epici</button>
+      <button class="cfilt" data-f="legendary">Leggendari</button>
+    </div>
+    <div class="coll-grid" id="coll-grid"></div>
+  </div>
+</div>
+
+<!-- ══ SHOP ══ -->
+<div class="screen subscreen" id="screen-shop">
+  <div class="sub-bg"></div>
+  <div class="sub-topbar">
+    <div class="hud-back" onclick="showScreen('menu')"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round"><polyline points="10,3 5,8 10,13"/></svg></div>
+    <div class="sub-title">Shop</div>
+    <div class="shop-coins-row" style="margin-left:auto">
+      <svg width="15" height="15" viewBox="0 0 20 20"><circle cx="10" cy="10" r="9" fill="#fbbf24" stroke="#d97706" stroke-width="1.5"/><text x="10" y="13.5" text-anchor="middle" font-size="8" font-weight="bold" fill="#78350f" font-family="sans-serif">$</text></svg>
+      <span id="shop-coins">0</span>
+    </div>
+  </div>
+  <div class="subscreen-inner">
+    <div style="color:rgba(255,255,255,0.4);font-size:0.8rem;text-align:center">Guadagna monete catturando peluche!</div>
+    <div class="shop-grid" id="shop-grid"></div>
+  </div>
+</div>
+
+<!-- ══ WIN ══ -->
+<div id="win-popup">
+  <div class="win-card">
+    <div class="win-title">🎉 Preso!</div>
+    <canvas id="win-canvas" style="width:120px;height:120px;border-radius:12px;" width="240" height="240"></canvas>
+    <div class="win-name" id="win-name">Peluche</div>
+    <div class="win-rarity" id="win-rarity">Comune</div>
+    <div class="win-coins" id="win-coins"></div>
+    <button class="win-close" onclick="closeWin()">Continua!</button>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+// ══ STATE ══
+let state={coins:0,collected:{},currentMachine:0,totalCatches:0};
+function loadState(){try{const s=localStorage.getItem('pc5');if(s)state={...state,...JSON.parse(s)};}catch(e){}}
+function saveState(){try{localStorage.setItem('pc5',JSON.stringify(state));}catch(e){}}
+loadState();
+
+// ══ MACHINES ══
+const MACHINES=[
+  {name:'Classica Rosa',    desc:'La macchinetta originale', unlockAt:0,  fCol:0xff4d8d, nCol:0x00d4ff, bg:[0.055,0.025,0.12],  floor:0x1e0f2e},
+  {name:'Neon Galassia',    desc:'Peluche cosmici',          unlockAt:8,  fCol:0x00d4ff, nCol:0x8b5cf6, bg:[0.02,0.055,0.14],   floor:0x071022},
+  {name:'Foresta Incantata',desc:'Creature magiche',          unlockAt:25, fCol:0x34d399, nCol:0xfbbf24, bg:[0.025,0.1,0.035],  floor:0x071408},
+  {name:'Abisso Marino',    desc:'Mostri degli abissi',       unlockAt:55, fCol:0x3b82f6, nCol:0x00d4ff, bg:[0.012,0.028,0.11], floor:0x030716},
+  {name:'Vulcano',          desc:'Spiriti del fuoco',         unlockAt:95, fCol:0xef4444, nCol:0xfbbf24, bg:[0.12,0.025,0.012], floor:0x140500},
+];
+
+// ══ PLUSHIES ══
+const RPOOL=['common','common','common','common','uncommon','uncommon','uncommon','rare','rare','epic','legendary'];
+const COINS_FOR={common:4,uncommon:9,rare:18,epic:35,legendary:80};
+const NAMES=["Orso Miele","Gattino Luna","Coniglio Nuvola","Volpe Aurora","Stella Marina","Pinguino Gelato","Dragone Rosa","Unicorno Arco","Fantasma Tenero","Funghetto","Tartaruga Cosm","Gufo Saggio","Topo Cioc","Elefante Indaco","Giraffa Festa","Lumaca","Rana Lullaby","Cocco Menta","Zebra Disko","Panda Zen","Orso Polare","Capibara","Axolotl","Delfino Stella","Aquila Neve","Volpe Nera","Gatto Vulcano","Drago Ghiaccio","Basilisco","Serpente Oro","Topo Jazz","Coniglio Fiamma","Orso Bruno","Panda Rosso","Kitsune","Fenice","Drago Tempesta","Unicorno Buio","Chimera Pastel","Grifone","Slime Amico","Blob Lilla","Nuvola Grassa","Bolla Prism","Capra Music","Leone Solare","Tigre Sabbia","Leopardo Neve","Giaguaro Luna","Orca Danza","Balena Cosm","Squalo Soft","Raggio Manta","Polipo Viola","Granchio Disko","Calamaro Luce","Gambero Crist","Stella Spinosa","Riccio Mare","Falco Vapor","Corvo Magic","Ibis Dorato","Fenicottero","Pappagallo Neon","Toucan Festa","Pavone Arco","Pinguino Tecno","Gufo Notte","Cicogna Rosa","Scoiattolo","Procione","Lontra Spritz","Castoro","Riccio Caldo","Lepre Bianca","Cervo Stella","Alce Miele","Bison Marmo","Gnu Ritmo","Cavallo Iris","Unicorno Pixel","Pegaso Nuvola","Drago Pixel","Sfinge Oro","Robot Tenero","Androide Rosa","Nano Circ","Bit Felice","Giga Bianco","Omega Oscuro","Alpha Oro","Beta Lilla","Gamma Verde","Delta Blu","Nebula Soft","Galassia Bimba","Pulsar Danza","Quasar Baby","Supernova","Nano Stella","Buco Nero Jr","Cometa Glitter","Asteroide","Meteorite","Fungo Foresta","Quercia Viva","Betulla Sogno","Abete Eterno","Ciliegio Fiore","Cactus Cuore","Aloe Felice","Lavanda","Rosa Oro","Girasole","Tulipano Neon","Orchidea","Dalia Pastel","Iris Profondo","Magnolia","Cristallo Rosa","Rubino","Zaffiro Baby","Smeraldo","Topazio","Ametista","Opale Arco","Turchese","Granato Fuoco","Perla Luna","Mago Cappello","Strega Dolce","Elfo Verde","Gnomo","Fata Buona","Folletto","Troll Gentile","Nano Simpa","Gigante Soft","Drago Fuoco","Pirata Pace","Ninja Rosa","Samurai Nuvola","Cavaliere","Arciere Stelle","Mago Ghiaccio","Stregone Oro","Druido Verde","Sciamano Blu","Bardo Arco","Ramen Tenero","Sushi Bello","Taiyaki Rosa","Mochi Soft","Dorayaki","Onigiri","Dango Triplo","Takoyaki","Tempura","Yakitori","Pizza Fetta","Burger Soft","Hotdog Cool","Taco Felice","Burrito","Waffle Nuvola","Pancake Torre","Croissant Oro","Baguette","Pretzel","Diamante 5","Trilogia Oro","Antico Saggio","Ombra Suprema","Luce Eterna","Vuoto","Sogno Eterno","Caos Gentile","Ordine Rosa","Destino Arco","Specchio Magic","Portale Vivo","Cristallo Tempo","Orologio","Bussola Nord","Mappa Stelle","Libro Segreto","Penna Oro","Calice Sacro","Scudo Tenero","Spirito Vento","Yokai Kawaii","Tanuki Danza","Kappa Amico","Oni Tenero","Zashiki","Inugami","Nekomata","Raijin Baby","Fujin Mini","Susanoo Jr","Amaterasu","Tsukuyomi","Izanagi","Izanami","Suseri","Kami Acqua","Kami Fuoco","Kami Terra","Kami Vento","Kami Fulmine","Nymph Bosco","Naiad Fiume","Dryad Quercia","Sylph Aria","Gnome Pietra"];
+
+function genPlushies(){
+  const out=[];
+  for(let i=0;i<200;i++){
+    const rar=RPOOL[Math.floor(Math.random()*RPOOL.length)];
+    const mach=i<40?0:i<80?1:i<120?2:i<160?3:4;
+    out.push({id:i,name:NAMES[i]||`Peluche #${i+1}`,rarity:rar,machine:mach,
+      hue:(i*43+12)%360,shape:i%6,
+      catchRate:{common:0.60,uncommon:0.42,rare:0.26,epic:0.13,legendary:0.06}[rar]});
+  }
+  return out;
+}
+const PLUSHIES=genPlushies();
+
+// ══ 3D PLUSH RENDERER — single shared renderer to avoid WebGL Context Lost ══
+// One offscreen renderer for still frames, reused for every card.
+// For the win popup we create a dedicated spinning renderer (only 1 at a time).
+
+let _sharedRenderer = null;
+let _sharedScene    = null;
+let _sharedCam      = null;
+let _sharedGroup    = null;
+
+function _getSharedRenderer(size){
+  if(!_sharedRenderer){
+    const oc = document.createElement('canvas');
+    oc.width = size; oc.height = size;
+    _sharedRenderer = new THREE.WebGLRenderer({canvas:oc, antialias:true, alpha:true});
+    _sharedRenderer.setPixelRatio(1); // keep it at 1 to save memory
+    _sharedRenderer.setClearColor(0x000000, 0);
+
+    _sharedScene = new THREE.Scene();
+    _sharedScene.add(new THREE.AmbientLight(0xffffff, 0.7));
+    const dl = new THREE.DirectionalLight(0xffffff, 1.4);
+    dl.position.set(3,5,4); _sharedScene.add(dl);
+    const dl2 = new THREE.DirectionalLight(0xffffff, 0.5);
+    dl2.position.set(-3,2,-2); _sharedScene.add(dl2);
+
+    _sharedCam = new THREE.PerspectiveCamera(42, 1, 0.1, 30);
+    _sharedCam.position.set(0, 0.5, 3.6);
+    _sharedCam.lookAt(0, 0.3, 0);
+
+    _sharedGroup = new THREE.Group();
+    _sharedScene.add(_sharedGroup);
+  }
+  // Resize if needed
+  _sharedRenderer.setSize(size, size);
+  return _sharedRenderer;
+}
+
+// Render a still frame into an <img> element (used for collection cards)
+function renderPlush3DtoImg(plush, img, size){
+  size = size || 100;
+  try {
+    const r = _getSharedRenderer(size);
+    // Clear previous plush geometry
+    while(_sharedGroup.children.length) _sharedGroup.remove(_sharedGroup.children[0]);
+    // Build new plush
+    build3DPlush(_sharedGroup, plush);
+    _sharedGroup.rotation.y = Math.PI * 0.18;
+    // Update point light color per plush
+    _sharedScene.children.filter(c=>c.isPointLight).forEach(l=>_sharedScene.remove(l));
+    const h = plush.hue/360;
+    const nCol = new THREE.Color().setHSL(h, 0.9, 0.55);
+    const pl = new THREE.PointLight(nCol, 1.5, 8);
+    pl.position.set(0,2,3); _sharedScene.add(pl);
+    // Render
+    r.render(_sharedScene, _sharedCam);
+    img.src = r.domElement.toDataURL('image/png');
+  } catch(e){ /* silently ignore if context lost */ }
+}
+
+// Render animated spin into a real canvas (win popup only — max 1 at a time)
+function renderPlush3D(plush, canvas, size, spin){
+  size = size || 240;
+  canvas.width = size; canvas.height = size;
+  if(!spin){
+    // Still frame via shared renderer → copy to canvas 2d
+    try {
+      const r = _getSharedRenderer(size);
+      while(_sharedGroup.children.length) _sharedGroup.remove(_sharedGroup.children[0]);
+      build3DPlush(_sharedGroup, plush);
+      _sharedGroup.rotation.y = Math.PI * 0.18;
+      _sharedScene.children.filter(c=>c.isPointLight).forEach(l=>_sharedScene.remove(l));
+      const h=plush.hue/360;
+      const pl=new THREE.PointLight(new THREE.Color().setHSL(h,0.9,0.55),1.5,8);
+      pl.position.set(0,2,3);_sharedScene.add(pl);
+      r.render(_sharedScene, _sharedCam);
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0,0,size,size);
+      ctx.drawImage(r.domElement, 0,0,size,size);
+    } catch(e){}
+    return;
+  }
+  // Spinning win popup — dedicated renderer
+  const r = new THREE.WebGLRenderer({canvas, antialias:true, alpha:true});
+  r.setPixelRatio(Math.min(devicePixelRatio,2));
+  r.setSize(size, size);
+  r.setClearColor(0x000000, 0);
+  const s = new THREE.Scene();
+  s.add(new THREE.AmbientLight(0xffffff,0.7));
+  const dl=new THREE.DirectionalLight(0xffffff,1.4); dl.position.set(3,5,4); s.add(dl);
+  const dl2=new THREE.DirectionalLight(0xffffff,0.5); dl2.position.set(-3,2,-2); s.add(dl2);
+  const nCol=new THREE.Color().setHSL(plush.hue/360,0.9,0.55);
+  const pl=new THREE.PointLight(nCol,1.5,8); pl.position.set(0,2,3); s.add(pl);
+  const cam=new THREE.PerspectiveCamera(42,1,0.1,30);
+  cam.position.set(0,0.5,3.6); cam.lookAt(0,0.3,0);
+  const g=new THREE.Group(); build3DPlush(g,plush); g.rotation.y=Math.PI*0.18; s.add(g);
+  let af;
+  function frame(){ af=requestAnimationFrame(frame); g.rotation.y+=0.022; r.render(s,cam); }
+  frame();
+  canvas._stopSpin=()=>{ cancelAnimationFrame(af); r.dispose(); };
+}
+
+// Queue-based async renderer for collection cards to avoid hammering the GPU
+const _renderQueue = [];
+let _renderBusy = false;
+function _processRenderQueue(){
+  if(_renderBusy || _renderQueue.length===0) return;
+  _renderBusy = true;
+  const {plush, img, size} = _renderQueue.shift();
+  // Use setTimeout to yield to the browser between renders
+  setTimeout(()=>{
+    renderPlush3DtoImg(plush, img, size);
+    _renderBusy = false;
+    _processRenderQueue();
+  }, 4);
+}
+function queuePlushRender(plush, img, size){
+  _renderQueue.push({plush, img, size});
+  _processRenderQueue();
+}
+
+
+// ══ SCREEN NAV ══
+function showScreen(id){
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  document.getElementById('screen-'+id).classList.add('active');
+  if(id==='menu'){updateMenu();spawnParticlesBG();}
+  if(id==='game')requestAnimationFrame(()=>requestAnimationFrame(initGame));
+  if(id==='collection')renderCollection('all');
+  if(id==='shop')renderShop();
+  if(id==='machines')renderMachines();
+}
+
+function updateMenu(){
+  document.getElementById('menu-coins').textContent=state.coins;
+  document.getElementById('menu-collected').textContent=Object.keys(state.collected).length;
+}
+
+function spawnParticlesBG(){
+  const container=document.getElementById('bg-particles');
+  container.innerHTML='';
+  for(let i=0;i<20;i++){
+    const p=document.createElement('div');p.className='mp';
+    const sz=4+Math.random()*10,hue=Math.random()*360;
+    p.style.cssText=`width:${sz}px;height:${sz}px;left:${Math.random()*100}%;top:100%;background:hsl(${hue},80%,65%);animation-duration:${7+Math.random()*9}s;animation-delay:${-Math.random()*10}s;`;
+    container.appendChild(p);
+  }
+}
+
+// ══ COLLECTION ══
+document.getElementById('coll-filters').addEventListener('click',e=>{
+  const b=e.target.closest('.cfilt');if(!b)return;
+  document.querySelectorAll('.cfilt').forEach(x=>x.classList.remove('active'));
+  b.classList.add('active');renderCollection(b.dataset.f);
+});
+function renderCollection(filter){
+  const owned=Object.keys(state.collected).length;
+  document.getElementById('coll-count').textContent=owned;
+  document.getElementById('coll-fill').style.width=(owned/200*100)+'%';
+  const unlockedMachines=MACHINES.map((_,i)=>i).filter(i=>owned>=MACHINES[i].unlockAt);
+  const unlocked=new Set(PLUSHIES.filter(p=>unlockedMachines.includes(p.machine)).map(p=>p.id));
+  const list=PLUSHIES.filter(p=>filter==='all'||p.rarity===filter);
+  const grid=document.getElementById('coll-grid');
+  grid.innerHTML='';
+  // Clear render queue when re-rendering collection
+  _renderQueue.length = 0;
+  list.forEach(p=>{
+    const own=!!state.collected[p.id],unl=unlocked.has(p.id)||own,lk=!unl;
+    const card=document.createElement('div');
+    card.className='coll-card'+(lk?' locked':'')+(own?' owned':'');
+    const dot=document.createElement('div');
+    dot.className='rarity-dot r-'+p.rarity;
+    card.appendChild(dot);
+    const iconWrap=document.createElement('div');
+    iconWrap.style.cssText='width:50px;height:50px;display:flex;align-items:center;justify-content:center;';
+    if(lk){
+      iconWrap.innerHTML=`<svg width="50" height="50" viewBox="0 0 100 100"><circle cx="50" cy="55" r="26" fill="rgba(255,255,255,0.05)"/><text x="50" y="61" text-anchor="middle" font-size="22" fill="rgba(255,255,255,0.18)" font-family="sans-serif">?</text></svg>`;
+    } else {
+      const img=document.createElement('img');
+      img.style.cssText='width:50px;height:50px;border-radius:6px;display:block;';
+      img.alt=p.name;
+      iconWrap.appendChild(img);
+      queuePlushRender(p, img, 100);
+    }
+    card.appendChild(iconWrap);
+    const nm=document.createElement('div');
+    nm.className='coll-name';nm.textContent=lk?'???':p.name;
+    card.appendChild(nm);
+    if(own){const ct=document.createElement('div');ct.className='owned-ct';ct.textContent='x'+state.collected[p.id];card.appendChild(ct);}
+    grid.appendChild(card);
+  });
+}
+
+// ══ MACHINES SCREEN ══
+function renderMachines(){
+  const owned=Object.keys(state.collected).length;
+  document.getElementById('machines-list').innerHTML=MACHINES.map((m,i)=>{
+    const unl=owned>=m.unlockAt,hue=i*72;
+    return `<div class="mach-card${unl?'':' locked'}">
+      <svg class="mach-icon" viewBox="0 0 56 56">
+        <rect x="4" y="10" width="48" height="40" rx="5" fill="hsla(${hue},58%,50%,0.14)" stroke="hsla(${hue},70%,60%,0.38)" stroke-width="1.5"/>
+        <rect x="4" y="10" width="48" height="12" rx="5" fill="hsla(${hue},58%,50%,0.22)"/>
+        <line x1="4" y1="22" x2="4" y2="50" stroke="hsla(${hue},80%,65%,0.72)" stroke-width="2.5" stroke-linecap="round"/>
+        <line x1="52" y1="22" x2="52" y2="50" stroke="hsla(${hue},80%,65%,0.72)" stroke-width="2.5" stroke-linecap="round"/>
+        <circle cx="20" cy="38" r="6" fill="hsla(${(hue+120)%360},70%,60%,0.7)"/>
+        <circle cx="35" cy="40" r="5" fill="hsla(${(hue+240)%360},70%,60%,0.7)"/>
+      </svg>
+      <div class="mach-info">
+        <h3>${m.name}</h3><p>${m.desc}</p>
+        <div class="mach-req">${unl?'✓ Sbloccata':`Richiede ${m.unlockAt} peluche (hai ${owned})`}</div>
+      </div>
+      ${unl?`<button class="mach-play" onclick="selectMachine(${i})">Gioca</button>`:''}
+    </div>`;
+  }).join('');
+}
+function selectMachine(i){state.currentMachine=i;saveState();showScreen('game');}
+
+// ══ SHOP ══
+const SHOP=[
+  {id:'lucky5',   name:'Charm Fortuna',    desc:'+25% catch rate ×5',   price:18, icon:'star',    eff:'lucky5'},
+  {id:'magnet3',  name:'Super Magnete',    desc:'Gancio magnetico ×3',  price:30, icon:'magnet',  eff:'magnet3'},
+  {id:'rainbow1', name:'Ticket Arcobaleno',desc:'Prossimo lancio raro+', price:50, icon:'rainbow', eff:'rare_next'},
+  {id:'double1',  name:'Doppio Bottino',   desc:'Prossima presa ×2 monete', price:25, icon:'double', eff:'double_next'},
+];
+let activeEffects={};
+
+function renderShop(){
+  document.getElementById('shop-coins').textContent=state.coins;
+  document.getElementById('shop-grid').innerHTML=SHOP.map(item=>{
+    const can=state.coins>=item.price;
+    return `<div class="shop-card">
+      <svg class="shop-icon" viewBox="0 0 80 80">${shopSVG(item.icon)}</svg>
+      <div class="shop-name">${item.name}</div>
+      <div class="shop-desc">${item.desc}</div>
+      <div class="shop-price"><svg width="13" height="13" viewBox="0 0 20 20"><circle cx="10" cy="10" r="9" fill="#fbbf24" stroke="#d97706" stroke-width="1.5"/><text x="10" y="13.5" text-anchor="middle" font-size="8" font-weight="bold" fill="#78350f" font-family="sans-serif">$</text></svg>${item.price}</div>
+      <button class="shop-buy" onclick="buyItem('${item.id}')" ${can?'':'disabled'}>${can?'Compra':'Troppo costoso'}</button>
+    </div>`;
+  }).join('');
+}
+function shopSVG(t){
+  return t==='star'?`<polygon points="40,8 48,30 72,30 53,46 60,68 40,54 20,68 27,46 8,30 32,30" fill="#fbbf24" stroke="#d97706" stroke-width="1.5"/>`:
+         t==='magnet'?`<path d="M18 62 L18 35 Q18 8 40 8 Q62 8 62 35 L62 62" fill="none" stroke="#ff4d8d" stroke-width="10" stroke-linecap="round"/><rect x="9" y="57" width="17" height="14" rx="4" fill="#00d4ff"/><rect x="54" y="57" width="17" height="14" rx="4" fill="#00d4ff"/>`:
+         t==='rainbow'?`<path d="M4 70 Q4 16 40 16 Q76 16 76 70" fill="none" stroke="#ff4d8d" stroke-width="9" stroke-linecap="round"/><path d="M12 70 Q12 26 40 26 Q68 26 68 70" fill="none" stroke="#fbbf24" stroke-width="7" stroke-linecap="round"/><path d="M20 70 Q20 36 40 36 Q60 36 60 70" fill="none" stroke="#00d4ff" stroke-width="6" stroke-linecap="round"/>`:
+         `<circle cx="30" cy="40" r="20" fill="rgba(52,211,153,0.28)" stroke="#34d399" stroke-width="2"/><circle cx="50" cy="40" r="20" fill="rgba(0,212,255,0.28)" stroke="#00d4ff" stroke-width="2"/><text x="40" y="47" text-anchor="middle" font-size="20" font-weight="bold" fill="#fff" font-family="sans-serif">×2</text>`;
+}
+function buyItem(id){
+  const item=SHOP.find(i=>i.id===id);
+  if(!item||state.coins<item.price){showToast('Monete insufficienti!');return;}
+  state.coins-=item.price;
+  activeEffects[item.eff]=(activeEffects[item.eff]||0)+1;
+  saveState();renderShop();showToast(`${item.name} attivato!`);
+}
+
+// ══ TOAST ══
+let toastT;
+function showToast(msg){
+  const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');
+  clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('show'),2400);
+}
+
+// ══ WIN ══
+function showWin(plush){
+  const coinR=COINS_FOR[plush.rarity]*(activeEffects['double_next']>0?2:1);
+  if(activeEffects['double_next']>0)activeEffects['double_next']--;
+  state.coins+=coinR;state.collected[plush.id]=(state.collected[plush.id]||0)+1;
+  state.totalCatches++;saveState();checkUnlocks();
+  // 3D spinning render
+  const winCv=document.getElementById('win-canvas');
+  if(winCv._stopSpin)winCv._stopSpin();
+  renderPlush3D(plush, winCv, 240, true);
+  document.getElementById('win-name').textContent=plush.name;
+  document.getElementById('win-rarity').textContent={common:'Comune',uncommon:'Non comune',rare:'Raro',epic:'Epico',legendary:'Leggendario'}[plush.rarity];
+  document.getElementById('win-coins').innerHTML=`<svg width="15" height="15" viewBox="0 0 20 20"><circle cx="10" cy="10" r="9" fill="#fbbf24" stroke="#d97706" stroke-width="1.5"/><text x="10" y="13.5" text-anchor="middle" font-size="8" font-weight="bold" fill="#78350f" font-family="sans-serif">$</text></svg>+${coinR} monete`;
+  document.getElementById('hud-coins').textContent=state.coins;
+  document.getElementById('win-popup').classList.add('show');
+  launchParticles(plush.hue);
+}
+function closeWin(){
+  document.getElementById('win-popup').classList.remove('show');
+  const winCv=document.getElementById('win-canvas');
+  if(winCv._stopSpin){winCv._stopSpin();winCv._stopSpin=null;}
+  stopParticles();
+}
+function checkUnlocks(){
+  const n=Object.keys(state.collected).length;
+  MACHINES.forEach((m,i)=>{if(n===m.unlockAt&&m.unlockAt>0)setTimeout(()=>showToast(`🔓 Sbloccata: ${m.name}!`),900);});
+}
+
+// ══ PARTICLES ══
+let pAnim;
+function launchParticles(hue){
+  const cv=document.getElementById('particles-canvas');
+  cv.classList.add('active');cv.width=innerWidth;cv.height=innerHeight;
+  const ctx=cv.getContext('2d');
+  const ps=Array.from({length:90},()=>({x:innerWidth/2,y:innerHeight/2,vx:(Math.random()-0.5)*17,vy:(Math.random()-0.5)*17-6,r:3+Math.random()*10,hue:hue+(Math.random()-0.5)*60,life:1,dec:0.01+Math.random()*0.013}));
+  function tick(){
+    ctx.clearRect(0,0,cv.width,cv.height);
+    let alive=false;
+    ps.forEach(p=>{if(p.life<=0)return;alive=true;p.x+=p.vx;p.y+=p.vy;p.vy+=0.28;p.life-=p.dec;ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,Math.PI*2);ctx.fillStyle=`hsla(${p.hue},82%,65%,${p.life})`;ctx.fill();});
+    if(alive)pAnim=requestAnimationFrame(tick);else stopParticles();
+  }
+  cancelAnimationFrame(pAnim);tick();
+}
+function stopParticles(){cancelAnimationFrame(pAnim);document.getElementById('particles-canvas').classList.remove('active');}
+
+// ════════════════════════════════════════
+// THREE.JS GAME ENGINE
+// ════════════════════════════════════════
+let renderer,scene,camera,animId;
+let machGroup,plushMeshes=[],clawGroup,clawCable,clawHead,clawTines=[];
+let camAngle=0,targetCamAngle=0;
+let cx=0,cz=0,cableT=0,targetCableT=0;
+const CABLE_RANGE=4.2,CABLE_TOP_Y=2.9,FLOOR_Y=-2.85,CLAMP=2.4;
+let phase='idle'; // idle|dropping|grabbing|rising|delivering
+let grabbed=null;
+let tineTiltTarget=0.44; // open by default
+let currentTineTilt=0.44;
+const keys={};
+document.addEventListener('keydown',e=>{keys[e.code]=true;if(e.code==='Space'){e.preventDefault();triggerDrop();}});
+document.addEventListener('keyup',e=>{keys[e.code]=false;});
+
+function setDisplay(txt){
+  const el=document.getElementById('arcade-display');
+  if(el)el.textContent=txt;
+}
+
+function initGame(){
+  const M=MACHINES[state.currentMachine];
+  document.getElementById('hud-coins').textContent=state.coins;
+  document.getElementById('hud-mach-name').textContent=M.name;
+
+  const cv=document.getElementById('three-canvas');
+  if(renderer){cancelAnimationFrame(animId);renderer.dispose();scene=null;}
+  renderer=new THREE.WebGLRenderer({canvas:cv,antialias:true});
+  renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+  renderer.shadowMap.enabled=true;
+  renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+  doResize();
+
+  scene=new THREE.Scene();
+  const bg=M.bg;
+  scene.background=new THREE.Color(bg[0],bg[1],bg[2]);
+  scene.fog=new THREE.Fog(new THREE.Color(bg[0]*0.5,bg[1]*0.5,bg[2]*0.5),18,40);
+
+  const cvRect=cv.getBoundingClientRect();
+  const cvW=cvRect.width||cv.clientWidth||window.innerWidth;
+  const cvH=cvRect.height||cv.clientHeight||(window.innerHeight-200);
+  camera=new THREE.PerspectiveCamera(50,cvW/cvH,0.1,80);
+  camera.position.set(0,3.5,13.5);
+  camera.lookAt(0,0.8,0);
+
+  setupLights(M);
+  buildMachine(M);
+  spawnPlushies();
+  buildClaw(M);
+
+  cx=0;cz=0;cableT=0;targetCableT=0;phase='idle';grabbed=null;
+  tineTiltTarget=0.44;currentTineTilt=0.44;
+  setDisplay('READY');
+  setupControls();
+  loop();
+}
+
+function doResize(){
+  if(!renderer)return;
+  const cv=document.getElementById('three-canvas');
+  const rect=cv.getBoundingClientRect();
+  const w=rect.width||cv.clientWidth||window.innerWidth;
+  const h=rect.height||cv.clientHeight||(window.innerHeight-200);
+  if(w===0||h===0)return;
+  renderer.setSize(w,h,false);
+  if(camera){camera.aspect=w/h;camera.updateProjectionMatrix();}
+}
+window.addEventListener('resize',doResize);
+
+function setupLights(M){
+  scene.add(new THREE.AmbientLight(0xffffff,0.52));
+  const sun=new THREE.DirectionalLight(0xffffff,1.3);
+  sun.position.set(4,12,8);sun.castShadow=true;
+  sun.shadow.mapSize.width=sun.shadow.mapSize.height=2048;
+  sun.shadow.camera.near=0.5;sun.shadow.camera.far=32;
+  sun.shadow.camera.left=sun.shadow.camera.bottom=-9;
+  sun.shadow.camera.right=sun.shadow.camera.top=9;
+  scene.add(sun);
+  // Neon color lights
+  const nL=new THREE.PointLight(M.fCol,2.8,16);nL.position.set(-3.8,4.5,0);scene.add(nL);
+  const nR=new THREE.PointLight(M.nCol,2.4,14);nR.position.set(3.8,4.5,0);scene.add(nR);
+  // Interior warm fill light
+  const fill=new THREE.PointLight(0xffffff,0.9,9);fill.position.set(0,4.2,0);scene.add(fill);
+  // Subtle back light
+  const back=new THREE.PointLight(0xffffff,0.55,7);back.position.set(0,0,-3);scene.add(back);
+}
+
+function buildMachine(M){
+  machGroup=new THREE.Group();
+  const fC=new THREE.Color(M.fCol),nC=new THREE.Color(M.nCol);
+
+  const fMat=new THREE.MeshStandardMaterial({color:fC,metalness:0.4,roughness:0.3,emissive:fC,emissiveIntensity:0.06});
+  const chromeMat=new THREE.MeshStandardMaterial({color:0xd0d0e0,metalness:0.9,roughness:0.12});
+  const glMat=new THREE.MeshPhysicalMaterial({color:0xaaddff,transparent:true,opacity:0.08,roughness:0.04,metalness:0.05,reflectivity:0.8,side:THREE.DoubleSide});
+  const flMat=new THREE.MeshStandardMaterial({color:M.floor,roughness:0.8,metalness:0.05});
+  const darkMat=new THREE.MeshStandardMaterial({color:0x0f0a1c,roughness:0.7});
+  const neonMatA=new THREE.MeshStandardMaterial({color:fC,emissive:fC,emissiveIntensity:2.5});
+  const neonMatB=new THREE.MeshStandardMaterial({color:nC,emissive:nC,emissiveIntensity:2.5});
+
+  const W=7.2,H=6.2,D=7.2,T=0.17;
+
+  // Floor (with slight texture variation)
+  const fl=new THREE.Mesh(new THREE.BoxGeometry(W-T*2,0.18,D-T*2),flMat);
+  fl.position.y=-H/2+0.09;fl.receiveShadow=true;machGroup.add(fl);
+
+  // Inner floor edge trim
+  const trimMat=new THREE.MeshStandardMaterial({color:0x2a1f40,roughness:0.6});
+  [[W-T*2,0.04,T,0,-H/2+0.19,D/2-T*1.5],[W-T*2,0.04,T,0,-H/2+0.19,-(D/2-T*1.5)],[T,0.04,D-T*2,W/2-T*1.5,-H/2+0.19,0],[T,0.04,D-T*2,-(W/2-T*1.5),-H/2+0.19,0]].forEach(([w,h,d,x,y,z])=>{
+    const b=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),trimMat);b.position.set(x,y,z);machGroup.add(b);
+  });
+
+  // Corner posts - thicker, more realistic
+  const postG=new THREE.BoxGeometry(T*1.1,H,T*1.1);
+  [[-1,-1],[1,-1],[1,1],[-1,1]].forEach(([sx,sz])=>{
+    const p=new THREE.Mesh(postG,fMat);
+    p.position.set(sx*(W/2-T/2),0,sz*(D/2-T/2));
+    p.castShadow=true;machGroup.add(p);
+    // Chrome corner cap top
+    const cap=new THREE.Mesh(new THREE.BoxGeometry(T*1.4,0.1,T*1.4),chromeMat);
+    cap.position.set(sx*(W/2-T/2),H/2+0.04,sz*(D/2-T/2));machGroup.add(cap);
+  });
+
+  // Top frame
+  const tY=H/2-T/2;
+  [[W+0.05,T*1.2,T,0,tY,D/2-T/2],[W+0.05,T*1.2,T,0,tY,-(D/2-T/2)],[T,T*1.2,D+0.05,W/2-T/2,tY,0],[T,T*1.2,D+0.05,-(W/2-T/2),tY,0]].forEach(([w,h,d,x,y,z])=>{
+    const b=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),fMat);b.position.set(x,y,z);machGroup.add(b);
+  });
+
+  // Bottom base panel (machine cabinet base)
+  const base=new THREE.Mesh(new THREE.BoxGeometry(W+0.4,1.2,D+0.4),darkMat);
+  base.position.y=-H/2-0.6;base.castShadow=true;machGroup.add(base);
+
+  // Prize chute hole
+  const chuteM=new THREE.MeshStandardMaterial({color:0x050210,roughness:1});
+  const chute=new THREE.Mesh(new THREE.BoxGeometry(2.0,0.25,2.0),chuteM);
+  chute.position.set(W/2-1.2,-H/2+0.11,D/2-1.2);machGroup.add(chute);
+  const chuteRim=new THREE.Mesh(new THREE.BoxGeometry(2.1,0.06,2.1),fMat);
+  chuteRim.position.set(W/2-1.2,-H/2+0.18,D/2-1.2);machGroup.add(chuteRim);
+
+  // Glass panels - 4 sides
+  const gH=H-T*2;const gY=T/2;
+  [
+    [new THREE.PlaneGeometry(W-T*2,gH),0,gY,D/2-0.01,0],
+    [new THREE.PlaneGeometry(W-T*2,gH),Math.PI,gY,-D/2+0.01,0],
+    [new THREE.PlaneGeometry(D-T*2,gH),Math.PI/2,gY,0,W/2-0.01],
+    [new THREE.PlaneGeometry(D-T*2,gH),-Math.PI/2,gY,0,-W/2+0.01]
+  ].forEach(([geo,ry,y,z,x])=>{
+    const g=new THREE.Mesh(geo,glMat);
+    g.position.set(x,y,z);g.rotation.y=ry;machGroup.add(g);
+  });
+
+  // Neon edge strips on corners
+  const ns=new THREE.CylinderGeometry(0.028,0.028,H*0.9,8);
+  [[-1,-1,neonMatA],[1,-1,neonMatB],[1,1,neonMatA],[-1,1,neonMatB]].forEach(([sx,sz,mat])=>{
+    const n=new THREE.Mesh(ns,mat);
+    n.position.set(sx*(W/2+0.012),0,sz*(D/2+0.012));machGroup.add(n);
+  });
+
+  // Top neon edge strips
+  const nsTop=[
+    [new THREE.BoxGeometry(W-T,0.04,0.04),0,H/2+0.02,D/2,neonMatA],
+    [new THREE.BoxGeometry(W-T,0.04,0.04),0,H/2+0.02,-D/2,neonMatB],
+    [new THREE.BoxGeometry(0.04,0.04,D-T),W/2,H/2+0.02,0,neonMatA],
+    [new THREE.BoxGeometry(0.04,0.04,D-T),-W/2,H/2+0.02,0,neonMatB],
+  ];
+  nsTop.forEach(([geo,x,y,z,mat])=>{const n=new THREE.Mesh(geo,mat);n.position.set(x,y,z);machGroup.add(n);});
+
+  // X rail (horizontal movement rail along X axis)
+  const rMat=new THREE.MeshStandardMaterial({color:0xb0b8d0,metalness:0.85,roughness:0.15});
+  const xRailG=new THREE.CylinderGeometry(0.038,0.038,W-T*2,12);
+  xRailG.applyMatrix4(new THREE.Matrix4().makeRotationZ(Math.PI/2));
+  const xRail=new THREE.Mesh(xRailG,rMat);
+  xRail.position.set(0,H/2-T-0.12,0);
+  machGroup.add(xRail);
+  // No zRail - it would just overlap the xRail visually and create the pole artifact
+
+  scene.add(machGroup);
+}
+
+// ══ PLUSHIES - Realistic spawning on floor ══
+function spawnPlushies(){
+  plushMeshes.forEach(p=>scene.remove(p.g));
+  plushMeshes=[];
+  const eligible=PLUSHIES.filter(p=>p.machine===state.currentMachine).slice(0,20);
+  
+  // Grid-based placement with random offsets - no floating!
+  const positions=[];
+  const cols=5,rows=4;
+  for(let r=0;r<rows;r++){
+    for(let c=0;c<cols;c++){
+      if(positions.length>=eligible.length)break;
+      const bx=(c-(cols-1)/2)*1.20;
+      const bz=(r-(rows-1)/2)*1.15-0.2;
+      positions.push([
+        bx+(Math.random()-0.5)*0.38,
+        bz+(Math.random()-0.5)*0.35
+      ]);
+    }
+  }
+
+  eligible.forEach((plush,i)=>{
+    const g=new THREE.Group();
+    build3DPlush(g,plush);
+    const [px,pz]=positions[i]||[(Math.random()-0.5)*4.0,(Math.random()-0.5)*3.8];
+    const sc=0.52+Math.random()*0.28;
+    g.scale.setScalar(sc);
+    // Place directly on floor, slight Y offset based on scale
+    const groundY=FLOOR_Y+sc*0.48;
+    g.position.set(px,groundY,pz);
+    g.rotation.y=Math.random()*Math.PI*2;
+    g.rotation.x=(Math.random()-0.5)*0.08;
+    const baseTiltZ=(Math.random()-0.5)*0.18;
+    g.rotation.z=baseTiltZ;
+    g.userData={plush,groundY,grabbed:false,wobble:Math.random()*Math.PI*2,idleRot:g.rotation.y,
+      vx:0,vz:0,spinV:0,tiltX:(Math.random()-0.5)*0.08,tiltZ:0,baseTiltZ};
+    g.castShadow=true;
+    scene.add(g);
+    plushMeshes.push({g,plush});
+  });
+}
+
+function build3DPlush(g,plush){
+  const h=plush.hue/360;
+  const c1=new THREE.Color().setHSL(h,0.74,0.66);
+  const c2=new THREE.Color().setHSL((h+0.08)%1,0.66,0.80);
+  const c3=new THREE.Color().setHSL((h+0.55)%1,0.72,0.60);
+  const m1=new THREE.MeshStandardMaterial({color:c1,roughness:0.72,metalness:0});
+  const m2=new THREE.MeshStandardMaterial({color:c2,roughness:0.68,metalness:0});
+  const m3=new THREE.MeshStandardMaterial({color:c3,roughness:0.65,metalness:0});
+  const me=new THREE.MeshStandardMaterial({color:0x111111,roughness:0.3,metalness:0.1});
+  const mw=new THREE.MeshStandardMaterial({color:0xffffff,roughness:0.5});
+  const mn=new THREE.MeshStandardMaterial({color:0x2a0d11,roughness:0.6});
+
+  function addEyes(x,y,z,r=0.072){
+    const eL=new THREE.Mesh(new THREE.SphereGeometry(r,10,10),me);eL.position.set(-x,y,z);g.add(eL);
+    const eR=eL.clone();eR.position.x=x;g.add(eR);
+    const wL=new THREE.Mesh(new THREE.SphereGeometry(r*0.44,6,6),mw);wL.position.set(-x+r*0.3,y+r*0.32,z+r*0.2);g.add(wL);
+    const wR=wL.clone();wR.position.x=x+r*0.3;g.add(wR);
+  }
+  function makeEarLong(mat,rx,rz,px,py,pz){
+    const gr=new THREE.Group();
+    const cyl=new THREE.Mesh(new THREE.CylinderGeometry(0.09,0.11,0.56,10),mat);
+    const capT=new THREE.Mesh(new THREE.SphereGeometry(0.09,8,8),mat);capT.position.y=0.28;
+    const capB=new THREE.Mesh(new THREE.SphereGeometry(0.11,8,8),mat);capB.position.y=-0.28;
+    gr.add(cyl,capT,capB);gr.position.set(px,py,pz);gr.rotation.set(rx,0,rz);return gr;
+  }
+
+  const s=plush.shape;
+  if(s===0){ // BEAR
+    const body=new THREE.Mesh(new THREE.SphereGeometry(0.56,16,16),m1);body.scale.set(1,1.06,0.94);g.add(body);
+    const head=new THREE.Mesh(new THREE.SphereGeometry(0.43,16,16),m1);head.position.set(0,0.84,0.06);g.add(head);
+    const earL=new THREE.Mesh(new THREE.SphereGeometry(0.17,10,10),m1);earL.position.set(-0.31,1.18,0.04);g.add(earL);
+    const earR=earL.clone();earR.position.x=0.31;g.add(earR);
+    const iEL=new THREE.Mesh(new THREE.SphereGeometry(0.1,8,8),m2);iEL.position.set(-0.31,1.18,0.1);g.add(iEL);
+    const iER=iEL.clone();iER.position.x=0.31;g.add(iER);
+    const belly=new THREE.Mesh(new THREE.SphereGeometry(0.35,10,10),m2);belly.position.set(0,-0.05,0.44);belly.scale.set(1,1.1,0.5);g.add(belly);
+    const snout=new THREE.Mesh(new THREE.SphereGeometry(0.19,10,10),m2);snout.position.set(0,0.73,0.38);snout.scale.set(1.12,0.7,0.78);g.add(snout);
+    const nose=new THREE.Mesh(new THREE.SphereGeometry(0.06,6,6),mn);nose.position.set(0,0.79,0.57);g.add(nose);
+    const armL=new THREE.Mesh(new THREE.SphereGeometry(0.22,10,10),m1);armL.position.set(-0.67,0.06,0.19);armL.scale.set(0.75,0.88,0.75);g.add(armL);
+    const armR=armL.clone();armR.position.x=0.67;g.add(armR);
+    const legL=new THREE.Mesh(new THREE.SphereGeometry(0.24,10,10),m1);legL.position.set(-0.28,-0.65,0.14);legL.scale.set(0.9,0.74,1.05);g.add(legL);
+    const legR=legL.clone();legR.position.x=0.28;g.add(legR);
+    addEyes(0.14,0.87,0.38);
+  }else if(s===1){ // CAT
+    const body=new THREE.Mesh(new THREE.SphereGeometry(0.54,16,16),m1);body.scale.set(1,1.09,0.92);g.add(body);
+    const head=new THREE.Mesh(new THREE.SphereGeometry(0.40,16,16),m1);head.position.set(0,0.80,0.05);g.add(head);
+    const eG=new THREE.ConeGeometry(0.14,0.30,4);
+    const eL=new THREE.Mesh(eG,m1);eL.position.set(-0.24,1.14,-0.02);eL.rotation.z=0.2;g.add(eL);
+    const eR=eL.clone();eR.position.x=0.24;eR.rotation.z=-0.2;g.add(eR);
+    const iEG=new THREE.ConeGeometry(0.08,0.20,4);
+    const iEL=new THREE.Mesh(iEG,m2);iEL.position.set(-0.24,1.14,0.05);iEL.rotation.z=0.2;g.add(iEL);
+    const iER=iEL.clone();iER.position.x=0.24;iER.rotation.z=-0.2;g.add(iER);
+    const ckL=new THREE.Mesh(new THREE.SphereGeometry(0.14,8,8),m2);ckL.position.set(-0.19,0.73,0.34);ckL.scale.z=0.5;g.add(ckL);
+    const ckR=ckL.clone();ckR.position.x=0.19;g.add(ckR);
+    const nose=new THREE.Mesh(new THREE.SphereGeometry(0.05,6,6),mn);nose.position.set(0,0.78,0.40);g.add(nose);
+    const tG=new THREE.TorusGeometry(0.3,0.075,6,14,Math.PI*1.1);
+    const tail=new THREE.Mesh(tG,m1);tail.position.set(0.4,-0.42,-0.3);tail.rotation.set(0.5,0.3,0);g.add(tail);
+    addEyes(0.13,0.83,0.36);
+  }else if(s===2){ // BUNNY
+    const body=new THREE.Mesh(new THREE.SphereGeometry(0.56,16,16),m1);body.scale.set(1,1.11,0.90);g.add(body);
+    const head=new THREE.Mesh(new THREE.SphereGeometry(0.39,16,16),m1);head.position.set(0,0.84,0.04);g.add(head);
+    g.add(makeEarLong(m1,0.1,-0.18,-0.18,1.30,0));
+    g.add(makeEarLong(m1,0.1,0.18,0.18,1.30,0));
+    g.add(makeEarLong(m2,0.1,-0.18,-0.18,1.30,0.07));
+    g.add(makeEarLong(m2,0.1,0.18,0.18,1.30,0.07));
+    const snout=new THREE.Mesh(new THREE.SphereGeometry(0.14,8,8),m2);snout.position.set(0,0.77,0.36);snout.scale.set(1.2,0.8,0.7);g.add(snout);
+    const nose=new THREE.Mesh(new THREE.SphereGeometry(0.06,6,6),m3);nose.position.set(0,0.81,0.50);g.add(nose);
+    const tail=new THREE.Mesh(new THREE.SphereGeometry(0.15,10,10),m2);tail.position.set(0,-0.44,-0.52);g.add(tail);
+    addEyes(0.13,0.87,0.34);
+  }else if(s===3){ // GHOST
+    const gMat=new THREE.MeshStandardMaterial({color:c1,transparent:true,opacity:0.88,roughness:0.3,metalness:0});
+    const gb=new THREE.Mesh(new THREE.SphereGeometry(0.53,18,18),gMat);gb.scale.set(1,1.32,0.90);g.add(gb);
+    for(let b=0;b<5;b++){const a=(b/5)*Math.PI*2;const bm=new THREE.Mesh(new THREE.SphereGeometry(0.18,8,8),gMat);bm.position.set(Math.sin(a)*0.37,-0.62,Math.cos(a)*0.27);g.add(bm);}
+    const blM=new THREE.MeshStandardMaterial({color:0xff88aa,transparent:true,opacity:0.45,roughness:0.5});
+    const blL=new THREE.Mesh(new THREE.SphereGeometry(0.13,8,8),blM);blL.position.set(-0.28,0.10,0.47);blL.scale.z=0.3;g.add(blL);
+    const blR=blL.clone();blR.position.x=0.28;g.add(blR);
+    addEyes(0.16,0.20,0.48);
+  }else if(s===4){ // DRAGON
+    const body=new THREE.Mesh(new THREE.SphereGeometry(0.55,16,16),m1);body.scale.set(1,1.06,0.94);g.add(body);
+    const head=new THREE.Mesh(new THREE.SphereGeometry(0.41,16,16),m1);head.position.set(0,0.82,0.07);g.add(head);
+    const snout=new THREE.Mesh(new THREE.SphereGeometry(0.22,10,10),m2);snout.position.set(0,0.73,0.43);snout.scale.set(0.9,0.65,0.9);g.add(snout);
+    const hG=new THREE.ConeGeometry(0.08,0.36,5);
+    const hL=new THREE.Mesh(hG,m3);hL.position.set(-0.21,1.16,0.06);hL.rotation.z=0.28;g.add(hL);
+    const hR=hL.clone();hR.position.x=0.21;hR.rotation.z=-0.28;g.add(hR);
+    // Wings
+    const wMat=new THREE.MeshStandardMaterial({color:c3,roughness:0.5,transparent:true,opacity:0.82,side:THREE.DoubleSide});
+    const wG=new THREE.ConeGeometry(0.26,0.46,4);
+    const wL=new THREE.Mesh(wG,wMat);wL.position.set(-0.68,0.22,0);wL.rotation.set(0,0,Math.PI*0.62);wL.scale.z=0.42;g.add(wL);
+    const wR=wL.clone();wR.position.x=0.68;wR.rotation.z=-Math.PI*0.62;g.add(wR);
+    addEyes(0.14,0.85,0.38);
+  }else{ // SLIME / ROUND
+    const sM=new THREE.MeshStandardMaterial({color:c1,roughness:0.35,metalness:0.05});
+    const body=new THREE.Mesh(new THREE.SphereGeometry(0.60,18,18),sM);body.scale.set(1,0.82,1);g.add(body);
+    for(let b=0;b<6;b++){const a=(b/6)*Math.PI*2;const nod=new THREE.Mesh(new THREE.SphereGeometry(0.14,8,8),sM);nod.position.set(Math.sin(a)*0.49,0.05,Math.cos(a)*0.49);g.add(nod);}
+    const topNub=new THREE.Mesh(new THREE.SphereGeometry(0.1,8,8),sM);topNub.position.set(0,0.62,0);g.add(topNub);
+    addEyes(0.16,0.08,0.54);
+    const mG=new THREE.TorusGeometry(0.18,0.032,5,12,Math.PI);
+    const mouth=new THREE.Mesh(mG,me);mouth.position.set(0,-0.04,0.58);mouth.rotation.set(0,0,Math.PI);g.add(mouth);
+  }
+}
+
+// ══ CLAW - Ultra-Realistic 3-finger crane claw ══
+// Each finger: pivot at housing bottom → upper arm → elbow joint → lower curved arm → rubber tip
+// Mirroring real arcade crane machines (UFO catcher style)
+
+let clawFingers=[]; // {pivot, upperArm, elbowJoint, lowerArm, tip, pivotPivot}
+
+function buildClaw(M){
+  clawGroup=new THREE.Group();
+  const nC=new THREE.Color(M.nCol);
+
+  // Materials
+  const steelMat   = new THREE.MeshStandardMaterial({color:0xd4d8e8, metalness:0.95, roughness:0.08,
+                       envMapIntensity:1.2});
+  const darkSteel  = new THREE.MeshStandardMaterial({color:0x6a6e80, metalness:0.88, roughness:0.18});
+  const blackSteel = new THREE.MeshStandardMaterial({color:0x222230, metalness:0.75, roughness:0.25});
+  const neonMat    = new THREE.MeshStandardMaterial({color:nC, emissive:nC, emissiveIntensity:1.2, roughness:0.3});
+  const rubberMat  = new THREE.MeshStandardMaterial({color:0x1a1a28, roughness:0.92, metalness:0.02});
+  const brassScrew = new THREE.MeshStandardMaterial({color:0xb8960c, metalness:0.85, roughness:0.2});
+
+  // ── CABLE (steel wire rope) ──
+  // Main wire
+  const cableG = new THREE.CylinderGeometry(0.018, 0.018, 1, 8);
+  clawCable = new THREE.Mesh(cableG, steelMat);
+  clawGroup.add(clawCable);
+  // Cable sheath rings (visual detail - periodic bands)
+  for(let i=0;i<6;i++){
+    const band = new THREE.Mesh(new THREE.CylinderGeometry(0.024,0.024,0.018,8), blackSteel);
+    band.userData.isBand=true; band.userData.bandIdx=i;
+    clawGroup.add(band);
+  }
+
+  // ── CLAW HEAD ASSEMBLY ──
+  clawHead = new THREE.Group();
+
+  // Main housing - truncated cylinder, polished steel
+  const housingOuter = new THREE.Mesh(new THREE.CylinderGeometry(0.195, 0.235, 0.32, 16), steelMat);
+  housingOuter.position.y = 0.02;
+  clawHead.add(housingOuter);
+
+  // Housing face plate (bottom disc)
+  const faceplate = new THREE.Mesh(new THREE.CylinderGeometry(0.195, 0.195, 0.04, 16), darkSteel);
+  faceplate.position.y = -0.14;
+  clawHead.add(faceplate);
+
+  // Housing top cap (connects to cable)
+  const topCap = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.195, 0.12, 12), darkSteel);
+  topCap.position.y = 0.22;
+  clawHead.add(topCap);
+
+  // Cable connector knob at very top
+  const knob = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.065, 0.08, 10), blackSteel);
+  knob.position.y = 0.32;
+  clawHead.add(knob);
+
+  // Neon ring (decorative LED strip around housing middle)
+  const ring1 = new THREE.Mesh(new THREE.TorusGeometry(0.218, 0.014, 8, 28), neonMat);
+  ring1.rotation.x = Math.PI/2; ring1.position.y = 0.06;
+  clawHead.add(ring1);
+  const ring2 = new THREE.Mesh(new THREE.TorusGeometry(0.218, 0.010, 6, 28), neonMat);
+  ring2.rotation.x = Math.PI/2; ring2.position.y = -0.06;
+  clawHead.add(ring2);
+
+  // 3 equidistant finger-mount brackets on the underside
+  for(let i=0;i<3;i++){
+    const a = (i/3)*Math.PI*2;
+    const bracket = new THREE.Mesh(new THREE.BoxGeometry(0.065, 0.10, 0.032), darkSteel);
+    bracket.position.set(Math.cos(a)*0.155, -0.14, Math.sin(a)*0.155);
+    bracket.rotation.y = -a;
+    clawHead.add(bracket);
+    // Screw bolt on bracket
+    const screw = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.04, 6), brassScrew);
+    screw.rotation.x = Math.PI/2;
+    screw.position.set(Math.cos(a)*0.155, -0.14, Math.sin(a)*0.155 + 0.022);
+    clawHead.add(screw);
+  }
+
+  clawGroup.add(clawHead);
+
+  // ── FINGERS (3) ──
+  clawFingers = [];
+  clawTines = []; // keep compatibility
+
+  for(let i=0;i<3;i++){
+    const ang = (i/3)*Math.PI*2;
+
+    // Each finger is a sub-group that pivots at the housing bottom
+    const fingerPivot = new THREE.Group();
+    fingerPivot.rotation.y = ang;
+    fingerPivot.position.y = -0.16; // mount point on housing bottom
+
+    // ── UPPER ARM ──
+    // Pivot joint sphere (the pin that connects to housing)
+    const pivotSphere = new THREE.Mesh(new THREE.SphereGeometry(0.028, 10, 10), darkSteel);
+    pivotSphere.position.set(0.165, 0, 0);
+    fingerPivot.add(pivotSphere);
+
+    // Upper arm: slightly tapered cylinder, angled outward+down
+    // We build it as a child group so we can rotate it around the pivot
+    const upperArmGroup = new THREE.Group();
+    upperArmGroup.position.set(0.165, 0, 0); // pivot point
+    const uaLen = 0.46;
+    const upperArm = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.022, 0.018, uaLen, 10), steelMat);
+    upperArm.position.set(0, -uaLen/2, 0); // cylinder hangs down from pivot
+    upperArmGroup.add(upperArm);
+
+    // Gusset / reinforcement nub at top of upper arm
+    const gusset = new THREE.Mesh(new THREE.SphereGeometry(0.022, 8, 8), darkSteel);
+    gusset.position.set(0, 0, 0);
+    upperArmGroup.add(gusset);
+
+    fingerPivot.add(upperArmGroup);
+
+    // ── ELBOW JOINT ──
+    const elbowJoint = new THREE.Mesh(new THREE.SphereGeometry(0.030, 10, 10), brassScrew);
+    elbowJoint.position.set(0, -uaLen, 0); // relative to upperArmGroup
+    upperArmGroup.add(elbowJoint);
+
+    // ── LOWER ARM (curved inward toward center) ──
+    const lowerArmGroup = new THREE.Group();
+    lowerArmGroup.position.set(0, -uaLen, 0);
+    const laLen = 0.40;
+
+    // Lower arm cylinder
+    const lowerArm = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.018, 0.014, laLen, 10), steelMat);
+    lowerArm.position.set(0, -laLen/2, 0);
+    lowerArmGroup.add(lowerArm);
+
+    // Inner groove detail on lower arm
+    const groove = new THREE.Mesh(
+      new THREE.TorusGeometry(0.018, 0.006, 5, 12), darkSteel);
+    groove.rotation.x = Math.PI/2;
+    groove.position.set(0, -laLen*0.3, 0);
+    lowerArmGroup.add(groove);
+
+    // ── TIP / CLAW POINT ──
+    // A slightly hooked end made from a tapered cone + rubber ball
+    const tipGroup = new THREE.Group();
+    tipGroup.position.set(0, -laLen, 0);
+
+    // Hook curve (small arc section to simulate the inward curve of real claws)
+    const hookCurve = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.014, 0.010, 0.12, 8), steelMat);
+    hookCurve.rotation.z = 0.55; // curve inward
+    hookCurve.position.set(-0.04, -0.04, 0);
+    tipGroup.add(hookCurve);
+
+    // Rubber ball tip (grips plushie)
+    const tipBall = new THREE.Mesh(new THREE.SphereGeometry(0.032, 10, 10), rubberMat);
+    tipBall.position.set(-0.072, -0.08, 0);
+    tipGroup.add(tipBall);
+
+    // Small ribbing on rubber tip (grip texture visual)
+    const rib = new THREE.Mesh(
+      new THREE.TorusGeometry(0.032, 0.006, 5, 12), blackSteel);
+    rib.rotation.x = Math.PI/2;
+    rib.position.set(-0.072, -0.08, 0);
+    tipGroup.add(rib);
+
+    lowerArmGroup.add(tipGroup);
+    upperArmGroup.add(lowerArmGroup);
+    clawHead.add(fingerPivot);
+
+    clawFingers.push({
+      fingerPivot,    // rotates around Y (spread angle)
+      upperArmGroup,  // rotates around Z (open/close)
+      lowerArmGroup,  // rotates around Z (secondary bend)
+      tipGroup,
+    });
+    clawTines.push(fingerPivot); // compat
+  }
+
+  scene.add(clawGroup);
+  refreshClaw();
+}
+
+function refreshClaw(){
+  if(!clawGroup) return;
+  clawGroup.position.set(cx, CABLE_TOP_Y, cz);
+
+  const cH = cableT * CABLE_RANGE + 0.32;
+
+  // Update cable length
+  if(clawCable){
+    clawCable.scale.y = cH;
+    clawCable.position.y = -cH / 2 - 0.01;
+  }
+
+  // Update cable band positions (evenly spaced along cable)
+  clawGroup.children.forEach(child => {
+    if(child.userData && child.userData.isBand){
+      const t = (child.userData.bandIdx + 0.5) / 6;
+      child.position.y = -t * cH - 0.01;
+    }
+  });
+
+  // Position head at bottom of cable
+  if(clawHead){
+    clawHead.position.y = -cH - 0.06;
+  }
+
+  // ── ANIMATE FINGERS (open / close) ──
+  // currentTineTilt: 0 = fully open, 1 = fully closed (inverted from old system)
+  // tineTiltTarget uses old convention: positive = open, negative = closed
+  // Map: open target(0.44) → openAmount=1; closed target(-0.55) → openAmount=0
+  const openAmount = THREE.MathUtils.clamp((tineTiltTarget + 0.55) / (0.44 + 0.55), 0, 1);
+  currentTineTilt += (openAmount - currentTineTilt) * 0.13;
+
+  // Real claw kinematics:
+  // When OPEN: upper arms splay outward (rotate Z), lower arms hang + angle out, tips spread wide
+  // When CLOSED: upper arms come nearly vertical, lower arms angle inward, tips curl in
+  const open = currentTineTilt; // 0=closed, 1=open
+
+  // Upper arm rotation (from vertical=closed to angled=open)
+  // At full open: upper arm makes ~55° with vertical (rotates ~0.95 rad outward)
+  // At full closed: nearly vertical (~5°, i.e. 0.08 rad)
+  const upperRot = THREE.MathUtils.lerp(0.08, 0.50, open);
+
+  // Lower arm secondary bend:
+  // Open: slight outward continuation (realistic resting position)
+  // Closed: bends sharply INWARD — hooking action
+  const lowerRot = THREE.MathUtils.lerp(-0.60, 0.14, open);
+
+  clawFingers.forEach(({upperArmGroup, lowerArmGroup}) => {
+    upperArmGroup.rotation.z = upperRot;
+    lowerArmGroup.rotation.z = lowerRot;
+  });
+}
+
+// ══ GAME LOOP ══
+const CSPEED=0.052,DSPEED=0.024;
+let jDX=0,jDY=0;
+let dropAccel=0; // gravity acceleration for drop
+
+function loop(){
+  animId=requestAnimationFrame(loop);
+
+  // Smooth camera
+  camAngle+=(targetCamAngle-camAngle)*0.052;
+  if(camera){
+    const R=13.5,cH=3.5;
+    camera.position.x=Math.sin(camAngle)*R;
+    camera.position.z=Math.cos(camAngle)*R;
+    camera.position.y=cH;
+    camera.lookAt(0,0.8,0);
+  }
+
+  const t=Date.now()*0.001;
+
+  // Plushies: physics-based idle + pushed by claw proximity
+  const clawWorldX = cx;
+  const clawWorldZ = cz;
+  // Calculate claw tip Y position in world space
+  const cH_now = cableT * CABLE_RANGE + 0.32;
+  const headY = CABLE_TOP_Y - cH_now - 0.06;
+  // Approximate claw tip Y (end of fingers when open)
+  const clawTipY = headY - 0.16 - 0.46 - 0.40;
+
+  plushMeshes.forEach(({g},idx)=>{
+    if(g.userData.grabbed) return;
+
+    // Init velocity if missing
+    if(!g.userData.vx) g.userData.vx = 0;
+    if(!g.userData.vz) g.userData.vz = 0;
+    if(!g.userData.spinV) g.userData.spinV = 0;
+    if(!g.userData.tiltX) g.userData.tiltX = g.rotation.x;
+    if(!g.userData.tiltZ) g.userData.tiltZ = g.rotation.z;
+
+    // ── CLAW PUSH PHYSICS ──
+    // Only push if claw is at a similar height to the plushie (within range)
+    const plushTop = g.userData.groundY + g.scale.x * 0.85;
+    const heightOverlap = clawTipY < plushTop + 0.3 && headY > g.userData.groundY - 0.4;
+
+    if(heightOverlap && (phase === 'dropping' || phase === 'idle' || phase === 'grabbing')){
+      const dx = g.position.x - clawWorldX;
+      const dz = g.position.z - clawWorldZ;
+      const dist2D = Math.sqrt(dx*dx + dz*dz);
+      const pushRadius = 0.95 + g.scale.x * 0.5;
+
+      if(dist2D < pushRadius && dist2D > 0.001){
+        // Stronger push when claw is descending and close
+        const dropBoost = (phase === 'dropping') ? 1.8 : 1.0;
+        // Force falls off with distance (closest = strongest)
+        const force = dropBoost * 0.018 * Math.pow(1 - dist2D/pushRadius, 1.4);
+        // Push away from claw center
+        g.userData.vx += (dx/dist2D) * force;
+        g.userData.vz += (dz/dist2D) * force;
+        // Add spin proportional to push
+        g.userData.spinV += (Math.random()-0.5) * force * 2.2;
+        // Slight tilt
+        g.userData.tiltZ += (dx/dist2D) * force * 0.8;
+        g.userData.tiltX += (dz/dist2D) * force * 0.8;
+      }
+    }
+
+    // ── PLUSHIE-PLUSHIE COLLISION (simple soft repulsion) ──
+    plushMeshes.forEach(({g:g2},idx2)=>{
+      if(idx2<=idx || g2.userData.grabbed) return;
+      const ddx=g.position.x-g2.position.x, ddz=g.position.z-g2.position.z;
+      const dd=Math.sqrt(ddx*ddx+ddz*ddz);
+      const minDist = (g.scale.x + g2.scale.x) * 0.55;
+      if(dd < minDist && dd > 0.001){
+        const push = (minDist - dd) * 0.004;
+        g.userData.vx  += (ddx/dd)*push;  g.userData.vz  += (ddz/dd)*push;
+        g2.userData.vx -= (ddx/dd)*push;  g2.userData.vz -= (ddz/dd)*push;
+      }
+    });
+
+    // ── FRICTION + INTEGRATION ──
+    const friction = 0.82;
+    g.userData.vx *= friction;
+    g.userData.vz *= friction;
+    g.userData.spinV *= 0.88;
+
+    // Move
+    g.position.x += g.userData.vx;
+    g.position.z += g.userData.vz;
+
+    // Clamp within machine floor
+    const wallClamp = 2.8;
+    if(Math.abs(g.position.x)>wallClamp){ g.position.x=Math.sign(g.position.x)*wallClamp; g.userData.vx*=-0.35; }
+    if(Math.abs(g.position.z)>wallClamp){ g.position.z=Math.sign(g.position.z)*wallClamp; g.userData.vz*=-0.35; }
+
+    // Spin (Y rotation)
+    g.rotation.y += g.userData.spinV;
+
+    // Tilt (X/Z rotation) - spring back toward resting lean
+    g.userData.tiltX *= 0.90;
+    g.userData.tiltZ *= 0.90;
+    // Spring back tilt toward base lean values
+    const baseTiltX = (Math.random()-0.5)*0.08 * 0; // stored in userData at spawn
+    const baseTiltZ = g.userData.baseTiltZ || 0;
+    g.rotation.x = g.userData.tiltX;
+    g.rotation.z = baseTiltZ + g.userData.tiltZ;
+
+    // Gentle idle bob (very subtle)
+    g.position.y = g.userData.groundY + Math.sin(t*0.7+g.userData.wobble)*0.008;
+  });
+
+  // Movement
+  if(phase==='idle'){
+    if(keys['ArrowLeft']||keys['KeyA'])  cx=Math.max(-CLAMP,cx-CSPEED);
+    if(keys['ArrowRight']||keys['KeyD']) cx=Math.min(CLAMP,cx+CSPEED);
+    if(keys['ArrowUp']||keys['KeyW'])    cz=Math.max(-CLAMP,cz-CSPEED);
+    if(keys['ArrowDown']||keys['KeyS'])  cz=Math.min(CLAMP,cz+CSPEED);
+    if(jDX||jDY){
+      cx=Math.max(-CLAMP,Math.min(CLAMP,cx+jDX*CSPEED*1.7));
+      cz=Math.max(-CLAMP,Math.min(CLAMP,cz+jDY*CSPEED*1.7));
+    }
+    tineTiltTarget=0.44; // open
+    dropAccel=0;
+    setDisplay('MOVE');
+  }
+
+  if(phase==='dropping'){
+    dropAccel=Math.min(dropAccel+0.0008,DSPEED*1.8);
+    targetCableT=Math.min(1,targetCableT+dropAccel);
+    cableT+=(targetCableT-cableT)*0.14;
+    tineTiltTarget=0.44; // open while dropping
+    setDisplay('DROP...');
+    if(targetCableT>=1){phase='grabbing';tineTiltTarget=-0.55;dropAccel=0;setTimeout(doGrab,500);}
+  }
+
+  if(phase==='grabbing'){
+    setDisplay('GRAB!');
+    tineTiltTarget=-0.55; // fully clamped shut - more dramatic close
+    currentTineTilt+=(tineTiltTarget-currentTineTilt)*0.14; // faster close animation
+  }
+
+  if(phase==='rising'){
+    targetCableT=Math.max(0,targetCableT-DSPEED*1.8);
+    cableT+=(targetCableT-cableT)*0.12;
+    tineTiltTarget=grabbed?-0.55:0.44;
+    setDisplay(grabbed?'GOT IT!':'MISS');
+    if(grabbed){
+      const hY=CABLE_TOP_Y-(cableT*CABLE_RANGE+0.32)-0.18;
+      // Position plushie below the claw tips, not inside
+      grabbed.g.position.set(cx,hY-0.72,cz);
+      grabbed.g.rotation.x=0;grabbed.g.rotation.z=0;
+    }
+    if(targetCableT<=0.02){
+      cableT=0;targetCableT=0;
+      if(grabbed){phase='delivering';}
+      else{phase='idle';showToast('😅 Mancato! Riprova.');}
+    }
+  }
+
+  if(phase==='delivering'&&grabbed){
+    const tx=2.8,tz=2.8;
+    const dx=tx-cx,dz=tz-cz,dist=Math.sqrt(dx*dx+dz*dz);
+    setDisplay('DELIVER');
+    if(dist>0.12){
+      cx+=dx*0.04;cz+=dz*0.04;
+      grabbed.g.position.x=cx;grabbed.g.position.z=cz;
+    }else{
+      showWin(grabbed.plush);
+      scene.remove(grabbed.g);
+      plushMeshes=plushMeshes.filter(p=>p!==grabbed);
+      grabbed=null;cx=0;cz=0;phase='idle';
+      if(plushMeshes.length<2)setTimeout(spawnPlushies,1200);
+    }
+  }
+
+  refreshClaw();
+  if(renderer&&scene&&camera)renderer.render(scene,camera);
+}
+
+function doGrab(){
+  let best=null,bestD=Infinity;
+  plushMeshes.forEach(pm=>{
+    const dx=pm.g.position.x-cx,dz=pm.g.position.z-cz,d=Math.sqrt(dx*dx+dz*dz);
+    if(d<bestD){bestD=d;best=pm;}
+  });
+  let caught=false;
+  if(best&&bestD<1.8){
+    let rate=best.plush.catchRate;
+    if(activeEffects['lucky5']>0){rate=Math.min(0.93,rate*1.28);activeEffects['lucky5']--;}
+    if(activeEffects['magnet3']>0){rate=Math.min(0.93,rate*1.55);activeEffects['magnet3']--;}
+    if(activeEffects['rare_next']>0){rate=0.99;activeEffects['rare_next']--;}
+    rate=Math.max(0.05,rate-bestD*0.11);
+    if(Math.random()<rate){caught=true;grabbed=best;grabbed.g.userData.grabbed=true;}
+  }
+  if(!caught)grabbed=null;
+  phase='rising';
+}
+
+function triggerDrop(){if(phase==='idle'){phase='dropping';targetCableT=cableT;dropAccel=0.002;}}
+
+// ══ JOYSTICK ══
+function setupControls(){
+  const base=document.getElementById('joy-base'),stick=document.getElementById('joy-stick');
+  if(!base)return;
+  const MAXR=32;
+  let active=false;
+  function move(ex,ey){
+    const r=base.getBoundingClientRect(),bcx=r.left+r.width/2,bcy=r.top+r.height/2;
+    let dx=ex-bcx,dy=ey-bcy,dist=Math.sqrt(dx*dx+dy*dy);
+    if(dist>MAXR){dx*=MAXR/dist;dy*=MAXR/dist;}
+    stick.style.transform=`translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+    jDX=dx/MAXR;jDY=dy/MAXR;
+  }
+  function end(){stick.style.transform='translate(-50%,-50%)';jDX=0;jDY=0;active=false;}
+  base.addEventListener('pointerdown',e=>{active=true;move(e.clientX,e.clientY);base.setPointerCapture(e.pointerId);});
+  base.addEventListener('pointermove',e=>{if(active)move(e.clientX,e.clientY);});
+  base.addEventListener('pointerup',end);base.addEventListener('pointercancel',end);
+
+  const drop=document.getElementById('btn-drop');
+  if(drop){
+    drop.addEventListener('pointerdown',()=>{drop.classList.add('pressed');triggerDrop();});
+    drop.addEventListener('pointerup',()=>drop.classList.remove('pressed'));
+    drop.addEventListener('pointercancel',()=>drop.classList.remove('pressed'));
+  }
+  document.getElementById('btn-view-left')?.addEventListener('click',()=>{targetCamAngle-=Math.PI/2.1;});
+  document.getElementById('btn-view-front')?.addEventListener('click',()=>{targetCamAngle=0;});
+  document.getElementById('btn-view-right')?.addEventListener('click',()=>{targetCamAngle+=Math.PI/2.1;});
+}
+
+// ══ INIT ══
+updateMenu();
+spawnParticlesBG();
+</script>
+</body>
+</html>

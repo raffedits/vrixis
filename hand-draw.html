@@ -1,0 +1,805 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>✋ Hand Draw</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;700;800&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --accent: #00ffe5;
+    --accent2: #ff4ded;
+    --accent3: #ffe040;
+    --glass: rgba(0,0,0,0.45);
+    --border: rgba(0,255,229,0.22);
+    --mono: 'Space Mono', monospace;
+    --sans: 'Syne', sans-serif;
+  }
+
+  html, body {
+    width: 100%; height: 100%;
+    overflow: hidden;
+    background: #000;
+    font-family: var(--mono);
+  }
+
+  /* ── CAMERA FULLSCREEN ── */
+  #video {
+    position: fixed;
+    inset: 0;
+    width: 100%; height: 100%;
+    object-fit: cover;
+    transform: scaleX(-1);
+    z-index: 1;
+    opacity: 0;
+    pointer-events: none;
+  }
+  #video.visible { opacity: 1; }
+
+  /* ── DRAWING CANVAS (on top of camera) ── */
+  #draw-canvas {
+    position: fixed;
+    inset: 0;
+    width: 100%; height: 100%;
+    z-index: 5;
+    cursor: none;
+  }
+
+  /* ── LANDMARK OVERLAY (invisible canvas for mediapipe) ── */
+  #lm-canvas {
+    position: fixed;
+    inset: 0;
+    width: 100%; height: 100%;
+    z-index: 6;
+    pointer-events: none;
+  }
+
+  /* ── HUD TOP ── */
+  #hud {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 24px;
+    pointer-events: none;
+    background: linear-gradient(to bottom, rgba(0,0,0,0.6) 0%, transparent 100%);
+  }
+
+  #logo {
+    font-family: var(--sans);
+    font-size: 1.2rem;
+    font-weight: 800;
+    color: var(--accent);
+    text-shadow: 0 0 18px var(--accent);
+    letter-spacing: -0.02em;
+  }
+  #logo span { color: var(--accent2); }
+
+  #status {
+    font-size: 0.65rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    background: var(--glass);
+    border: 1px solid var(--border);
+    backdrop-filter: blur(12px);
+    padding: 6px 16px;
+    border-radius: 100px;
+    color: var(--accent);
+    white-space: nowrap;
+    transition: color 0.3s, border-color 0.3s;
+    pointer-events: none;
+  }
+  #status.draw   { color: var(--accent3); border-color: rgba(255,224,64,0.5); }
+  #status.drag   { color: var(--accent2); border-color: rgba(255,77,237,0.5); }
+  #status.erase  { color: #f88; border-color: rgba(255,100,100,0.5); }
+
+  /* ── COLOR PALETTE TOOLBAR (bottom center) ── */
+  #toolbar {
+    position: fixed;
+    bottom: 24px; left: 50%; transform: translateX(-50%);
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--glass);
+    border: 1px solid var(--border);
+    backdrop-filter: blur(16px);
+    padding: 10px 16px;
+    border-radius: 60px;
+    pointer-events: all;
+  }
+
+  .color-swatch {
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    cursor: pointer;
+    border: 2px solid transparent;
+    transition: transform 0.15s, border-color 0.15s, box-shadow 0.15s;
+    flex-shrink: 0;
+  }
+  .color-swatch:hover { transform: scale(1.2); }
+  .color-swatch.active {
+    border-color: #fff;
+    box-shadow: 0 0 10px rgba(255,255,255,0.5);
+    transform: scale(1.25);
+  }
+
+  .toolbar-sep {
+    width: 1px; height: 28px;
+    background: var(--border);
+    flex-shrink: 0;
+  }
+
+  .tool-btn {
+    font-family: var(--mono);
+    font-size: 0.6rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 6px 14px;
+    border-radius: 30px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: rgba(232,234,240,0.7);
+    cursor: pointer;
+    transition: all 0.2s;
+    white-space: nowrap;
+  }
+  .tool-btn:hover { background: rgba(255,255,255,0.08); color: #fff; }
+  .tool-btn.active { background: rgba(255,100,100,0.15); border-color: rgba(255,100,100,0.5); color: #f88; }
+
+  /* ── SIZE SLIDER ── */
+  #size-wrap {
+    display: flex; align-items: center; gap: 8px;
+  }
+  #size-label {
+    font-size: 0.55rem;
+    letter-spacing: 0.1em;
+    color: rgba(232,234,240,0.5);
+    white-space: nowrap;
+  }
+  #size-slider {
+    -webkit-appearance: none;
+    width: 70px; height: 3px;
+    background: rgba(255,255,255,0.15);
+    border-radius: 99px;
+    outline: none;
+    cursor: pointer;
+  }
+  #size-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 8px var(--accent);
+    cursor: pointer;
+  }
+
+  /* ── CLEAR BUTTON ── */
+  #btn-clear {
+    font-family: var(--mono);
+    font-size: 0.6rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 6px 14px;
+    border-radius: 30px;
+    border: 1px solid rgba(255,77,237,0.35);
+    background: transparent;
+    color: var(--accent2);
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  #btn-clear:hover { background: rgba(255,77,237,0.1); }
+
+  /* ── LEGEND ── */
+  #legend {
+    position: fixed;
+    top: 64px; right: 20px;
+    z-index: 20;
+    font-size: 0.58rem;
+    letter-spacing: 0.08em;
+    line-height: 2;
+    background: var(--glass);
+    border: 1px solid var(--border);
+    backdrop-filter: blur(10px);
+    padding: 10px 14px;
+    border-radius: 10px;
+    color: rgba(232,234,240,0.6);
+    pointer-events: none;
+  }
+  #legend b { color: var(--accent); }
+  #legend .y { color: var(--accent3); }
+  #legend .p { color: var(--accent2); }
+  #legend .r { color: #f88; }
+
+  /* ── CURSOR DOT ── */
+  #cursor-dot {
+    position: fixed;
+    pointer-events: none;
+    z-index: 30;
+    width: 20px; height: 20px;
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    transition: opacity 0.2s;
+    opacity: 0;
+    mix-blend-mode: screen;
+  }
+
+  /* ── SCROLL HINT ── */
+  #scroll-hint {
+    position: fixed;
+    bottom: 90px; left: 50%; transform: translateX(-50%);
+    z-index: 20;
+    font-size: 0.58rem;
+    letter-spacing: 0.12em;
+    color: rgba(232,234,240,0.35);
+    pointer-events: none;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  /* ── SPLASH ── */
+  #splash {
+    position: fixed; inset: 0;
+    z-index: 100;
+    background: #050810;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 20px;
+    transition: opacity 0.8s;
+  }
+  #splash.hide { opacity: 0; pointer-events: none; }
+  #splash h1 {
+    font-family: var(--sans);
+    font-size: clamp(2.2rem, 7vw, 4.5rem);
+    font-weight: 800;
+    color: var(--accent);
+    text-shadow: 0 0 50px var(--accent);
+    letter-spacing: -0.03em;
+  }
+  #splash h1 span { color: var(--accent2); }
+  #splash p {
+    font-size: 0.75rem;
+    letter-spacing: 0.1em;
+    color: rgba(232,234,240,0.45);
+    text-align: center;
+    max-width: 340px;
+    line-height: 1.9;
+  }
+  #splash-btn {
+    font-family: var(--mono);
+    font-size: 0.8rem;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    padding: 14px 36px;
+    border-radius: 8px;
+    border: 1px solid var(--accent);
+    background: transparent;
+    color: var(--accent);
+    cursor: pointer;
+    transition: all 0.2s;
+    box-shadow: 0 0 20px rgba(0,255,229,0.15);
+    margin-top: 8px;
+  }
+  #splash-btn:hover { background: rgba(0,255,229,0.08); box-shadow: 0 0 40px rgba(0,255,229,0.3); }
+
+  /* ── LOADER ── */
+  #loader {
+    position: fixed; inset: 0; z-index: 90;
+    background: #050810;
+    display: none; flex-direction: column;
+    align-items: center; justify-content: center; gap: 14px;
+  }
+  #loader.show { display: flex; }
+  #loader-bar-wrap { width: 200px; height: 3px; background: rgba(255,255,255,0.07); border-radius: 99px; overflow: hidden; }
+  #loader-bar { height: 100%; width: 0%; background: var(--accent); box-shadow: 0 0 12px var(--accent); border-radius: 99px; transition: width 0.3s; }
+  #loader p { font-size: 0.62rem; letter-spacing: 0.14em; color: rgba(232,234,240,0.4); }
+
+  /* scanline */
+  body::after {
+    content: '';
+    position: fixed; inset: 0; z-index: 200;
+    background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.025) 2px, rgba(0,0,0,0.025) 4px);
+    pointer-events: none;
+  }
+</style>
+</head>
+<body>
+
+<!-- SPLASH -->
+<div id="splash">
+  <h1>Hand<span>Draw</span></h1>
+  <p>Disegna con le mani in realtà aumentata — nessun controller, solo i tuoi gesti.</p>
+  <button id="splash-btn">▶ Avvia Fotocamera</button>
+</div>
+
+<!-- LOADER -->
+<div id="loader">
+  <div id="loader-bar-wrap"><div id="loader-bar"></div></div>
+  <p id="loader-text">INIZIALIZZAZIONE...</p>
+</div>
+
+<!-- FULLSCREEN CAMERA -->
+<video id="video" autoplay playsinline></video>
+
+<!-- DRAWING CANVAS -->
+<canvas id="draw-canvas"></canvas>
+
+<!-- LANDMARK OVERLAY -->
+<canvas id="lm-canvas"></canvas>
+
+<!-- CURSOR DOT -->
+<div id="cursor-dot"></div>
+
+<!-- HUD -->
+<div id="hud">
+  <div id="logo">hand<span>draw</span></div>
+  <div id="status">In attesa delle mani...</div>
+</div>
+
+<!-- LEGEND -->
+<div id="legend">
+  <b>COME USARE</b><br>
+  <span class="y">Mano destra pinch</span> → disegna<br>
+  <span class="p">Due mani pinch</span> → trascina disegno<br>
+  <span class="r">Scroll mouse</span> → cambia colore/gomma<br>
+  <b>Toolbar</b> → click colori / gomma
+</div>
+
+<!-- TOOLBAR -->
+<div id="toolbar">
+  <div id="size-wrap">
+    <span id="size-label">SIZE</span>
+    <input type="range" id="size-slider" min="2" max="40" value="8">
+  </div>
+  <div class="toolbar-sep"></div>
+  <!-- Colors filled by JS -->
+  <div id="swatches"></div>
+  <div class="toolbar-sep"></div>
+  <button class="tool-btn" id="btn-eraser">◻ Gomma</button>
+  <div class="toolbar-sep"></div>
+  <button id="btn-clear">✕ Pulisci</button>
+</div>
+
+<div id="scroll-hint">↕ scroll = colore/gomma</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"
+  }
+}
+</script>
+
+<script>
+/* ══════════════════════════════════════════════════════
+   PALETTE & TOOL STATE
+══════════════════════════════════════════════════════ */
+const PALETTE = [
+  '#00ffe5', '#ff4ded', '#ffe040', '#ff6030',
+  '#60ff60', '#60aaff', '#ffffff', '#ff9999'
+];
+// -1 = eraser in scroll order: colors 0..7, then eraser
+let toolIndex = 0; // 0..7 colors, 8 = eraser
+let brushSize = 8;
+
+const state = {
+  running: false,
+  drawing: false,    // right pinch active
+  dragging: false,   // both pinch active
+  eraser: false,
+  color: PALETTE[0],
+  lastX: null, lastY: null,
+  dragStartX: null, dragStartY: null,
+  dragOffX: 0, dragOffY: 0,
+  // smoothed finger positions
+  rSmX: null, rSmY: null,
+  lSmX: null, lSmY: null,
+};
+
+/* ══════════════════════════════════════════════════════
+   CANVAS SETUP
+══════════════════════════════════════════════════════ */
+const drawCanvas = document.getElementById('draw-canvas');
+const dctx = drawCanvas.getContext('2d');
+const lmCanvas = document.getElementById('lm-canvas');
+const lctx = lmCanvas.getContext('2d');
+
+// Offscreen canvas for the drawing (so we can translate it for drag)
+let offCanvas = document.createElement('canvas');
+let octx = offCanvas.getContext('2d');
+let offX = 0, offY = 0; // current translation of drawing
+
+function resizeCanvases() {
+  const W = window.innerWidth, H = window.innerHeight;
+  drawCanvas.width = W; drawCanvas.height = H;
+  lmCanvas.width = W; lmCanvas.height = H;
+
+  // Resize offscreen preserving content
+  const tmp = document.createElement('canvas');
+  tmp.width = W; tmp.height = H;
+  const tctx = tmp.getContext('2d');
+  tctx.drawImage(offCanvas, offX, offY);
+  offCanvas.width = W; offCanvas.height = H;
+  octx = offCanvas.getContext('2d');
+  octx.drawImage(tmp, -offX, -offY);
+  offX = 0; offY = 0;
+}
+resizeCanvases();
+window.addEventListener('resize', resizeCanvases);
+
+/* ══════════════════════════════════════════════════════
+   TOOLBAR BUILD
+══════════════════════════════════════════════════════ */
+const swatchesEl = document.getElementById('swatches');
+swatchesEl.style.display = 'flex';
+swatchesEl.style.gap = '8px';
+swatchesEl.style.alignItems = 'center';
+
+PALETTE.forEach((col, i) => {
+  const s = document.createElement('div');
+  s.className = 'color-swatch' + (i === 0 ? ' active' : '');
+  s.style.background = col;
+  s.style.boxShadow = `0 0 6px ${col}88`;
+  s.addEventListener('click', () => selectTool(i));
+  swatchesEl.appendChild(s);
+});
+
+function selectTool(idx) {
+  toolIndex = idx;
+  const isEraser = idx >= PALETTE.length;
+  state.eraser = isEraser;
+  state.color = isEraser ? null : PALETTE[idx];
+  // Update swatch highlights
+  document.querySelectorAll('.color-swatch').forEach((s, i) => s.classList.toggle('active', i === idx));
+  document.getElementById('btn-eraser').classList.toggle('active', isEraser);
+  updateCursorDot();
+}
+
+document.getElementById('btn-eraser').addEventListener('click', () => selectTool(PALETTE.length));
+document.getElementById('btn-clear').addEventListener('click', () => {
+  octx.clearRect(-offX, -offY, offCanvas.width * 2, offCanvas.height * 2);
+  offX = 0; offY = 0;
+  renderDrawing();
+});
+
+const sizeSlider = document.getElementById('size-slider');
+sizeSlider.addEventListener('input', () => {
+  brushSize = parseInt(sizeSlider.value);
+  updateCursorDot();
+});
+
+/* Scroll to cycle color/eraser */
+window.addEventListener('wheel', (e) => {
+  const total = PALETTE.length + 1; // +1 for eraser
+  toolIndex = (toolIndex + (e.deltaY > 0 ? 1 : -1) + total) % total;
+  selectTool(toolIndex);
+});
+
+/* ══════════════════════════════════════════════════════
+   CURSOR DOT
+══════════════════════════════════════════════════════ */
+const cursorDot = document.getElementById('cursor-dot');
+
+function updateCursorDot() {
+  const sz = Math.max(brushSize, 10);
+  cursorDot.style.width = sz + 'px';
+  cursorDot.style.height = sz + 'px';
+  if (state.eraser) {
+    cursorDot.style.background = 'transparent';
+    cursorDot.style.border = '2px solid rgba(255,100,100,0.8)';
+    cursorDot.style.boxShadow = 'none';
+  } else {
+    cursorDot.style.background = state.color;
+    cursorDot.style.border = 'none';
+    cursorDot.style.boxShadow = `0 0 ${sz}px ${state.color}`;
+  }
+}
+updateCursorDot();
+
+/* ══════════════════════════════════════════════════════
+   DRAWING HELPERS
+══════════════════════════════════════════════════════ */
+function renderDrawing() {
+  dctx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+  dctx.drawImage(offCanvas, offX, offY);
+}
+
+function strokeTo(x, y) {
+  // Convert screen coords to offscreen coords
+  const ox = x - offX, oy = y - offY;
+  octx.lineWidth = brushSize;
+  octx.lineCap = 'round';
+  octx.lineJoin = 'round';
+  if (state.eraser) {
+    octx.globalCompositeOperation = 'destination-out';
+    octx.strokeStyle = 'rgba(0,0,0,1)';
+  } else {
+    octx.globalCompositeOperation = 'source-over';
+    octx.strokeStyle = state.color;
+    octx.shadowColor = state.color;
+    octx.shadowBlur = brushSize * 0.6;
+  }
+  if (state.lastX === null) {
+    octx.beginPath();
+    octx.arc(ox, oy, brushSize / 2, 0, Math.PI * 2);
+    octx.fill();
+  } else {
+    octx.beginPath();
+    octx.moveTo(state.lastX - offX, state.lastY - offY);
+    octx.lineTo(ox, oy);
+    octx.stroke();
+  }
+  octx.shadowBlur = 0;
+  state.lastX = x; state.lastY = y;
+  renderDrawing();
+}
+
+/* ══════════════════════════════════════════════════════
+   STATUS UI
+══════════════════════════════════════════════════════ */
+const statusEl = document.getElementById('status');
+function setStatus(msg, cls) {
+  statusEl.textContent = msg;
+  statusEl.className = cls || '';
+}
+
+/* ══════════════════════════════════════════════════════
+   MEDIAPIPE HANDS
+══════════════════════════════════════════════════════ */
+let handsModule = null;
+let camera_mp = null;
+const video = document.getElementById('video');
+let detectedHands = {};
+
+const PINCH_THRESH = 0.065;
+const SMOOTH = 0.35;
+
+function smooth(prev, next) {
+  if (prev === null || prev === undefined) return next;
+  return prev + (next - prev) * SMOOTH;
+}
+
+function dist2(lm, a, b) {
+  const dx = lm[a].x - lm[b].x;
+  const dy = lm[a].y - lm[b].y;
+  return Math.sqrt(dx*dx + dy*dy);
+}
+
+function isPinch(lm) {
+  return dist2(lm, 4, 8) < PINCH_THRESH;
+}
+
+async function initMediaPipe() {
+  return new Promise((resolve, reject) => {
+    if (window.Hands) { resolve(); return; }
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js';
+    s.crossOrigin = 'anonymous';
+    s.onload = () => {
+      const s2 = document.createElement('script');
+      s2.src = 'https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js';
+      s2.crossOrigin = 'anonymous';
+      s2.onload = resolve;
+      s2.onerror = reject;
+      document.head.appendChild(s2);
+    };
+    s.onerror = reject;
+    document.head.appendChild(s);
+  });
+}
+
+function setupHands() {
+  handsModule = new window.Hands({
+    locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`
+  });
+  handsModule.setOptions({
+    maxNumHands: 2,
+    modelComplexity: 1,
+    minDetectionConfidence: 0.7,
+    minTrackingConfidence: 0.6,
+  });
+  handsModule.onResults(onResults);
+}
+
+function onResults(results) {
+  detectedHands = {};
+  lctx.clearRect(0, 0, lmCanvas.width, lmCanvas.height);
+
+  if (!results.multiHandLandmarks) { processHands(); return; }
+
+  results.multiHandLandmarks.forEach((lm, i) => {
+    const label = results.multiHandedness[i]?.label || 'Right';
+    // Mirror: MediaPipe labels from camera POV, but we mirror video
+    const side = label === 'Right' ? 'Left' : 'Right';
+    detectedHands[side] = lm;
+    drawLandmarks(lm);
+  });
+
+  processHands();
+}
+
+function drawLandmarks(lm) {
+  const W = lmCanvas.width, H = lmCanvas.height;
+  // Draw finger tip dots
+  const tips = [4, 8, 12, 16, 20];
+  tips.forEach(i => {
+    const x = (1 - lm[i].x) * W;
+    const y = lm[i].y * H;
+    lctx.beginPath();
+    lctx.arc(x, y, 5, 0, Math.PI * 2);
+    lctx.fillStyle = 'rgba(255,255,255,0.4)';
+    lctx.fill();
+  });
+  // Draw index tip bigger
+  const ix = (1 - lm[8].x) * W;
+  const iy = lm[8].y * H;
+  lctx.beginPath();
+  lctx.arc(ix, iy, 8, 0, Math.PI * 2);
+  lctx.fillStyle = 'rgba(0,255,229,0.55)';
+  lctx.fill();
+}
+
+/* ══════════════════════════════════════════════════════
+   CORE HAND LOGIC
+══════════════════════════════════════════════════════ */
+function processHands() {
+  const W = drawCanvas.width, H = drawCanvas.height;
+  const rLm = detectedHands['Right'];
+  const lLm = detectedHands['Left'];
+
+  // Map normalized coords to screen (mirrored X)
+  function toScreen(lm, idx) {
+    return {
+      x: (1 - lm[idx].x) * W,
+      y: lm[idx].y * H
+    };
+  }
+
+  const rPinch = rLm ? isPinch(rLm) : false;
+  const lPinch = lLm ? isPinch(lLm) : false;
+
+  // Smooth right index tip position
+  if (rLm) {
+    const p = toScreen(rLm, 8);
+    state.rSmX = smooth(state.rSmX, p.x);
+    state.rSmY = smooth(state.rSmY, p.y);
+  } else {
+    state.rSmX = null; state.rSmY = null;
+  }
+  if (lLm) {
+    const p = toScreen(lLm, 8);
+    state.lSmX = smooth(state.lSmX, p.x);
+    state.lSmY = smooth(state.lSmY, p.y);
+  } else {
+    state.lSmX = null; state.lSmY = null;
+  }
+
+  // ── DRAG MODE: both hands pinching ──
+  const bothPinch = rPinch && lPinch && rLm && lLm;
+
+  if (bothPinch) {
+    const midX = (state.rSmX + state.lSmX) / 2;
+    const midY = (state.rSmY + state.lSmY) / 2;
+
+    if (!state.dragging) {
+      state.dragging = true;
+      state.drawing = false;
+      state.lastX = null; state.lastY = null;
+      state.dragStartX = midX;
+      state.dragStartY = midY;
+      state.dragInitOffX = offX;
+      state.dragInitOffY = offY;
+    } else {
+      offX = state.dragInitOffX + (midX - state.dragStartX);
+      offY = state.dragInitOffY + (midY - state.dragStartY);
+      renderDrawing();
+    }
+    moveCursor(midX, midY, false);
+    setStatus('⇄ Spostamento disegno', 'drag');
+    return;
+  }
+
+  if (state.dragging) {
+    state.dragging = false;
+    // Bake offset into offscreen canvas to avoid drift
+    const tmp = document.createElement('canvas');
+    tmp.width = offCanvas.width; tmp.height = offCanvas.height;
+    const tctx = tmp.getContext('2d');
+    tctx.drawImage(offCanvas, offX, offY);
+    octx.clearRect(0, 0, offCanvas.width, offCanvas.height);
+    octx.drawImage(tmp, 0, 0);
+    offX = 0; offY = 0;
+    renderDrawing();
+  }
+
+  // ── DRAW MODE: right pinch only ──
+  if (rLm && rPinch && !lPinch) {
+    if (!state.drawing) {
+      state.drawing = true;
+      state.lastX = null; state.lastY = null;
+    }
+    strokeTo(state.rSmX, state.rSmY);
+    moveCursor(state.rSmX, state.rSmY, true);
+    setStatus(state.eraser ? '◻ Gomma attiva' : '✏ Disegno', state.eraser ? 'erase' : 'draw');
+    return;
+  }
+
+  // Released pinch
+  if (state.drawing) {
+    state.drawing = false;
+    state.lastX = null; state.lastY = null;
+  }
+
+  // Idle - show cursor on right index tip
+  if (rLm) {
+    moveCursor(state.rSmX, state.rSmY, false);
+    setStatus('◎ Pinch per disegnare', '');
+  } else {
+    cursorDot.style.opacity = '0';
+    setStatus(lLm ? '〇 Mano sinistra rilevata' : '〇 In attesa delle mani...', '');
+  }
+}
+
+function moveCursor(x, y, active) {
+  cursorDot.style.opacity = active ? '0.9' : '0.4';
+  cursorDot.style.left = x + 'px';
+  cursorDot.style.top = y + 'px';
+}
+
+/* ══════════════════════════════════════════════════════
+   CAMERA INIT
+══════════════════════════════════════════════════════ */
+const loaderEl = document.getElementById('loader');
+const loaderBar = document.getElementById('loader-bar');
+const loaderText = document.getElementById('loader-text');
+
+function showLoader(msg, pct) { loaderEl.classList.add('show'); loaderText.textContent = msg; loaderBar.style.width = pct + '%'; }
+function setLoaderProgress(pct, msg) { loaderBar.style.width = pct + '%'; if (msg) loaderText.textContent = msg; }
+function hideLoader() { loaderEl.classList.remove('show'); }
+
+async function startCamera() {
+  showLoader('CARICAMENTO MEDIAPIPE...', 10);
+  try {
+    await initMediaPipe();
+    setLoaderProgress(40, 'CONFIGURAZIONE HANDS...');
+    setupHands();
+    await handsModule.initialize();
+    setLoaderProgress(75, 'ACCESSO WEBCAM...');
+
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { width: { ideal: 1920 }, height: { ideal: 1080 }, facingMode: 'user', frameRate: { ideal: 30 } }
+    });
+    video.srcObject = stream;
+    await new Promise(r => video.onloadedmetadata = r);
+    video.classList.add('visible');
+    setLoaderProgress(90, 'AVVIO TRACKING...');
+
+    camera_mp = new window.Camera(video, {
+      onFrame: async () => { await handsModule.send({ image: video }); },
+      width: 1280, height: 720
+    });
+    await camera_mp.start();
+    state.running = true;
+    setLoaderProgress(100, 'PRONTO');
+    setTimeout(hideLoader, 400);
+  } catch (err) {
+    console.error(err);
+    hideLoader();
+    setStatus('✖ Errore: ' + (err.message || err), 'erase');
+  }
+}
+
+document.getElementById('splash-btn').addEventListener('click', () => {
+  const splash = document.getElementById('splash');
+  splash.classList.add('hide');
+  setTimeout(() => splash.style.display = 'none', 800);
+  startCamera();
+});
+</script>
+</body>
+</html>

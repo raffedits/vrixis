@@ -1,0 +1,1127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Fluix</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <style>
+        body, html { 
+            margin: 0; 
+            padding: 0; 
+            overflow: hidden; 
+            background: #000; 
+            touch-action: none; 
+        }
+        canvas { 
+            display: block; 
+            width: 100vw; 
+            height: 100vh; 
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        // ============ CONSTANTS ============
+        const BASE_VERTEX_SHADER = `
+  attribute vec2 aPosition;
+  varying vec2 vUv;
+  void main () {
+      vUv = aPosition * 0.5 + 0.5;
+      gl_Position = vec4(aPosition, 0.0, 1.0);
+  }
+`;
+
+        const CLEAR_SHADER = `
+  precision highp float;
+  varying vec2 vUv;
+  uniform sampler2D uTexture;
+  uniform float value;
+  void main () {
+      gl_FragColor = value * texture2D(uTexture, vUv);
+  }
+`;
+
+        const ADVECTION_SHADER = `
+  precision highp float;
+  varying vec2 vUv;
+  uniform sampler2D uVelocity;
+  uniform sampler2D uSource;
+  uniform vec2 texelSize;
+  uniform float dt;
+  uniform float dissipation;
+
+  void main () {
+      vec2 coord = vUv - dt * texture2D(uVelocity, vUv).xy * texelSize;
+      gl_FragColor = texture2D(uSource, coord) * dissipation;
+  }
+`;
+
+        const DIVERGENCE_SHADER = `
+  precision highp float;
+  varying vec2 vUv;
+  uniform sampler2D uVelocity;
+  uniform vec2 texelSize;
+
+  void main () {
+      float L = texture2D(uVelocity, vUv - vec2(texelSize.x, 0.0)).x;
+      float R = texture2D(uVelocity, vUv + vec2(texelSize.x, 0.0)).x;
+      float T = texture2D(uVelocity, vUv + vec2(0.0, texelSize.y)).y;
+      float B = texture2D(uVelocity, vUv - vec2(0.0, texelSize.y)).y;
+
+      float div = 0.5 * (R - L + T - B);
+      gl_FragColor = vec4(div, 0.0, 0.0, 1.0);
+  }
+`;
+
+        const PRESSURE_SHADER = `
+  precision highp float;
+  varying vec2 vUv;
+  uniform sampler2D uPressure;
+  uniform sampler2D uDivergence;
+  uniform vec2 texelSize;
+
+  void main () {
+      float L = texture2D(uPressure, vUv - vec2(texelSize.x, 0.0)).x;
+      float R = texture2D(uPressure, vUv + vec2(texelSize.x, 0.0)).x;
+      float T = texture2D(uPressure, vUv + vec2(0.0, texelSize.y)).x;
+      float B = texture2D(uPressure, vUv - vec2(0.0, texelSize.y)).x;
+      float C = texture2D(uDivergence, vUv).x;
+
+      float pressure = (L + R + T + B - C) * 0.25;
+      gl_FragColor = vec4(pressure, 0.0, 0.0, 1.0);
+  }
+`;
+
+        const GRADIENT_SUBTRACT_SHADER = `
+  precision highp float;
+  varying vec2 vUv;
+  uniform sampler2D uPressure;
+  uniform sampler2D uVelocity;
+  uniform vec2 texelSize;
+
+  void main () {
+      float L = texture2D(uPressure, vUv - vec2(texelSize.x, 0.0)).x;
+      float R = texture2D(uPressure, vUv + vec2(texelSize.x, 0.0)).x;
+      float T = texture2D(uPressure, vUv + vec2(0.0, texelSize.y)).x;
+      float B = texture2D(uPressure, vUv - vec2(0.0, texelSize.y)).x;
+      
+      vec2 velocity = texture2D(uVelocity, vUv).xy;
+      velocity.xy -= vec2(R - L, T - B);
+      gl_FragColor = vec4(velocity, 0.0, 1.0);
+  }
+`;
+
+        const VORTICITY_SHADER = `
+  precision highp float;
+  varying vec2 vUv;
+  uniform sampler2D uVelocity;
+  uniform sampler2D uCurl;
+  uniform float curl;
+  uniform float dt;
+  uniform vec2 texelSize;
+
+  void main () {
+      float L = texture2D(uCurl, vUv - vec2(texelSize.x, 0.0)).x;
+      float R = texture2D(uCurl, vUv + vec2(texelSize.x, 0.0)).x;
+      float T = texture2D(uCurl, vUv + vec2(0.0, texelSize.y)).x;
+      float B = texture2D(uCurl, vUv - vec2(0.0, texelSize.y)).x;
+      float C = texture2D(uCurl, vUv).x;
+
+      vec2 force = vec2(abs(T) - abs(B), abs(R) - abs(L));
+      force /= length(force) + 0.0001;
+      force *= curl * C;
+      force.y *= -1.0;
+
+      vec2 velocity = texture2D(uVelocity, vUv).xy;
+      gl_FragColor = vec4(velocity + force * dt, 0.0, 1.0);
+  }
+`;
+
+        const CURL_SHADER = `
+  precision highp float;
+  varying vec2 vUv;
+  uniform sampler2D uVelocity;
+  uniform vec2 texelSize;
+
+  void main () {
+      float L = texture2D(uVelocity, vUv - vec2(texelSize.x, 0.0)).y;
+      float R = texture2D(uVelocity, vUv + vec2(texelSize.x, 0.0)).y;
+      float T = texture2D(uVelocity, vUv + vec2(0.0, texelSize.y)).x;
+      float B = texture2D(uVelocity, vUv - vec2(0.0, texelSize.y)).x;
+
+      float vorticity = R - L - T + B;
+      gl_FragColor = vec4(0.5 * vorticity, 0.0, 0.0, 1.0);
+  }
+`;
+
+        const SPLAT_SHADER = `
+  precision highp float;
+  varying vec2 vUv;
+  uniform sampler2D uTarget;
+  uniform float aspectRatio;
+  uniform vec3 color;
+  uniform vec2 point;
+  uniform float radius;
+  uniform int uMode;
+
+  void main () {
+      vec2 p = vUv - point.xy;
+      p.x *= aspectRatio;
+      float falloff = exp(-dot(p, p) / radius);
+      
+      vec3 splatVal = color;
+      
+      if (uMode == 1) {
+         vec2 dir = normalize(p + 0.000001);
+         vec2 tangent = vec2(-dir.y, dir.x);
+         vec2 flowDir = normalize(dir + tangent * 0.4); 
+         splatVal = vec3(flowDir * color.x, 0.0);
+      }
+
+      vec3 splat = falloff * splatVal;
+      vec3 base = texture2D(uTarget, vUv).xyz;
+      gl_FragColor = vec4(base + splat, 1.0);
+  }
+`;
+
+        const DISPLAY_SHADER = `
+  precision highp float;
+  varying vec2 vUv;
+  uniform sampler2D uTexture;
+  uniform sampler2D uBloom;
+  uniform sampler2D uSunrays;
+  uniform sampler2D uDithering;
+  uniform vec2 texelSize;
+  uniform int uMode;
+
+  float rand(vec2 co){
+      return fract(sin(dot(co, vec2(12.9898, 78.233))) * 43758.5453);
+  }
+
+  void main () {
+    vec4 c = texture2D(uTexture, vUv);
+    vec3 color = c.rgb;
+    float density = length(color);
+
+    if (uMode == 0) {
+       vec3 fire = vec3(1.5, 0.5, 0.1) * density;
+       fire += vec3(1.0, 1.0, 0.8) * smoothstep(1.0, 3.0, density);
+       color = fire;
+    } 
+    else if (uMode == 1) {
+       color = pow(color, vec3(1.2));
+       color *= 1.5;
+       color += vec3(0.8, 0.8, 1.0) * smoothstep(1.2, 2.5, density);
+    }
+    else if (uMode == 2) {
+       float L = length(texture2D(uTexture, vUv - vec2(texelSize.x, 0.0)).rgb);
+       float R = length(texture2D(uTexture, vUv + vec2(texelSize.x, 0.0)).rgb);
+       float T = length(texture2D(uTexture, vUv + vec2(0.0, texelSize.y)).rgb);
+       float B = length(texture2D(uTexture, vUv - vec2(0.0, texelSize.y)).rgb);
+       
+       vec3 normal = normalize(vec3(L-R, T-B, 0.2));
+       vec3 lightDir = normalize(vec3(1.0, 1.0, 2.0));
+       vec3 viewDir = vec3(0.0, 0.0, 1.0);
+       vec3 halfDir = normalize(lightDir + viewDir);
+       float spec = pow(max(dot(normal, halfDir), 0.0), 32.0);
+       vec3 ref = reflect(-viewDir, normal);
+       float env = 0.5 + 0.5 * sin(ref.x * 10.0 + ref.y * 5.0);
+       
+       color = vec3(0.1, 0.4, 0.8) * density * 0.5 + vec3(1.0) * spec + vec3(0.8, 0.9, 1.0) * env * density * 0.2;
+    }
+    else if (uMode == 3) {
+        vec3 noise = vec3(rand(vUv), rand(vUv + 0.1), rand(vUv + 0.2));
+        color = color * (0.8 + 0.2 * noise);
+        color = pow(color, vec3(0.8));
+    }
+    else if (uMode == 4) {
+        vec3 magma = vec3(1.0, 0.1, 0.0);
+        vec3 core = vec3(1.0, 0.8, 0.5);
+        float heat = smoothstep(0.0, 1.5, density);
+        color = mix(magma * density, core, heat * heat);
+        if (density < 0.2) color *= 0.5;
+    }
+    else if (uMode == 5) {
+        vec3 iceColor = vec3(0.6, 0.8, 1.0);
+        float noise = rand(vUv * 50.0);
+        color = iceColor * density * 1.2;
+        color += vec3(1.0) * smoothstep(0.2, 0.6, density) * noise * 0.3;
+        color += vec3(0.8, 0.9, 1.0) * smoothstep(1.5, 3.0, density);
+    }
+    else if (uMode == 6) {
+       float L = length(texture2D(uTexture, vUv - vec2(texelSize.x, 0.0)).rgb);
+       float R = length(texture2D(uTexture, vUv + vec2(texelSize.x, 0.0)).rgb);
+       float T = length(texture2D(uTexture, vUv + vec2(0.0, texelSize.y)).rgb);
+       float B = length(texture2D(uTexture, vUv - vec2(0.0, texelSize.y)).rgb);
+       vec3 normal = normalize(vec3(L-R, T-B, 0.1));
+       vec3 lightDir = normalize(vec3(-1.0, 1.0, 1.0));
+       vec3 viewDir = vec3(0.0, 0.0, 1.0);
+       vec3 halfDir = normalize(lightDir + viewDir);
+       float spec = pow(max(dot(normal, halfDir), 0.0), 16.0); 
+       vec3 gold = vec3(1.0, 0.7, 0.1);
+       vec3 darkGold = vec3(0.4, 0.2, 0.0);
+       color = mix(darkGold, gold, density) * density;
+       color += vec3(1.0, 0.9, 0.5) * spec * 1.5; 
+    }
+    else if (uMode == 7) {
+        vec3 pink = vec3(1.0, 0.4, 0.8);
+        vec3 teal = vec3(0.0, 1.0, 1.0);
+        float t = smoothstep(0.0, 1.5, density);
+        color = mix(teal, pink, t) * density;
+        color += mix(teal, pink, t) * 0.3;
+    }
+    else if (uMode == 8) {
+        float d = density * 1.5;
+        vec3 mist = vec3(0.8, 0.8, 0.9);
+        color = mist * d;
+        float shadow = smoothstep(0.5, 1.0, d);
+        color = mix(color, vec3(0.1, 0.1, 0.2), shadow * 0.8);
+    }
+    else if (uMode == 9) {
+        vec3 deepSpace = vec3(0.1, 0.0, 0.2);
+        vec3 stardust = vec3(0.8, 0.4, 1.0);
+        float sparkles = pow(rand(vUv * 10.0 + density), 20.0) * density;
+        color = mix(deepSpace, stardust, density);
+        color += vec3(1.0) * sparkles;
+        color *= 1.5;
+    }
+    else if (uMode == 10) {
+        vec3 deepBlue = vec3(0.0, 0.1, 0.4);
+        vec3 cyanGlow = vec3(0.0, 1.0, 0.8);
+        float intensity = smoothstep(0.2, 1.2, density);
+        color = mix(deepBlue, cyanGlow, intensity * intensity) * density;
+        color *= 1.0 + 0.2 * sin(density * 10.0);
+    }
+    else if (uMode == 11) {
+        vec3 cyan = vec3(0.0, 1.0, 1.0);
+        vec3 magenta = vec3(1.0, 0.0, 1.0);
+        float mixVal = smoothstep(0.0, 2.0, density);
+        color = mix(cyan, magenta, mixVal) * density;
+        color += vec3(1.0) * smoothstep(1.5, 3.0, density);
+    }
+    else if (uMode == 12) {
+        vec3 petal = vec3(1.0, 0.6, 0.7);
+        vec3 white = vec3(1.0, 0.95, 0.95);
+        float t = smoothstep(0.5, 1.5, density);
+        color = mix(petal, white, t) * density;
+        color += petal * 0.2 * density;
+    }
+    else if (uMode == 13) {
+        vec3 deepGreen = vec3(0.0, 0.2, 0.1);
+        vec3 brightEmerald = vec3(0.0, 0.9, 0.4);
+        vec3 goldHighlight = vec3(0.9, 1.0, 0.6);
+
+        float t1 = smoothstep(0.0, 1.2, density);
+        float t2 = smoothstep(1.2, 2.5, density);
+
+        color = mix(deepGreen, brightEmerald, t1) * density;
+        color = mix(color, goldHighlight, t2);
+        
+        color *= 1.2;
+    }
+    else if (uMode == 14) {
+        vec3 smoke = vec3(0.2, 0.2, 0.25);
+        vec3 ember = vec3(1.0, 0.2, 0.0);
+        float heat = smoothstep(1.0, 2.0, density);
+        color = mix(smoke * density, ember * density * 2.0, heat);
+    }
+    else if (uMode == 15) {
+        vec3 blue = vec3(0.4, 0.8, 1.0);
+        vec3 pink = vec3(1.0, 0.6, 0.8);
+        float swirl = sin(density * 3.0 + vUv.x * 5.0);
+        color = mix(blue, pink, swirl * 0.5 + 0.5) * density;
+        float sugar = rand(vUv * 5.0);
+        color += vec3(0.2) * sugar * density;
+    }
+
+    if (uMode != 8 && uMode != 14) { 
+        color += color * 0.2;
+    }
+
+    float dist = distance(vUv, vec2(0.5));
+    color *= smoothstep(0.8, 0.2, dist);
+
+    gl_FragColor = vec4(color, 1.0);
+  }
+`;
+
+        // ============ VISUAL STYLES ============
+        const VisualStyle = {
+            NEON_FIRE: 'NEON_FIRE',
+            ELECTRIC_PLASMA: 'ELECTRIC_PLASMA',
+            LIQUID_GLASS: 'LIQUID_GLASS',
+            NEBULA_SPIRALS: 'NEBULA_SPIRALS',
+            ARCTIC_FROST: 'ARCTIC_FROST',
+            GOLDEN_ICHOR: 'GOLDEN_ICHOR',
+            MOLTEN_CORE: 'MOLTEN_CORE',
+            VAPOR_WAVE: 'VAPOR_WAVE',
+            SHADOW_MIST: 'SHADOW_MIST',
+            COSMIC_DUST: 'COSMIC_DUST',
+            BIOLUMINESCENCE: 'BIOLUMINESCENCE',
+            CYBER_INK: 'CYBER_INK',
+            CHERRY_BLOSSOM: 'CHERRY_BLOSSOM',
+            EMERALD_CITY: 'EMERALD_CITY',
+            VOLCANIC_ASH: 'VOLCANIC_ASH',
+            CANDY_LAND: 'CANDY_LAND',
+        };
+
+        // ============ WEBGL UTILS ============
+        function createProgram(gl, vertexSource, fragmentSource) {
+            const vertexShader = compileShader(gl, gl.VERTEX_SHADER, vertexSource);
+            const fragmentShader = compileShader(gl, gl.FRAGMENT_SHADER, fragmentSource);
+
+            const program = gl.createProgram();
+            if (!program) throw new Error('Failed to create program');
+
+            gl.attachShader(program, vertexShader);
+            gl.attachShader(program, fragmentShader);
+            gl.linkProgram(program);
+
+            if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+                console.error(gl.getProgramInfoLog(program));
+                throw new Error('Program link error');
+            }
+            return program;
+        }
+
+        function compileShader(gl, type, source) {
+            const shader = gl.createShader(type);
+            if (!shader) throw new Error('Failed to create shader');
+
+            gl.shaderSource(shader, source);
+            gl.compileShader(shader);
+
+            if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+                console.error(gl.getShaderInfoLog(shader));
+                throw new Error('Shader compile error');
+            }
+            return shader;
+        }
+
+        function createTexture(gl, width, height) {
+            const texture = gl.createTexture();
+            gl.bindTexture(gl.TEXTURE_2D, texture);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, width, height, 0, gl.RGBA, gl.HALF_FLOAT, null);
+            return texture;
+        }
+
+        function createFBO(gl, width, height) {
+            const texture = createTexture(gl, width, height);
+            const fbo = gl.createFramebuffer();
+            gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+            gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+            
+            const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+            if (status !== gl.FRAMEBUFFER_COMPLETE) {
+                console.error('Framebuffer not complete', status);
+            }
+            
+            return { texture, fbo, width, height };
+        }
+
+        function createDoubleFBO(gl, width, height) {
+            let fbo1 = createFBO(gl, width, height);
+            let fbo2 = createFBO(gl, width, height);
+
+            return {
+                width,
+                height,
+                texelSizeX: 1.0 / width,
+                texelSizeY: 1.0 / height,
+                get read() {
+                    return fbo1;
+                },
+                get write() {
+                    return fbo2;
+                },
+                swap() {
+                    const temp = fbo1;
+                    fbo1 = fbo2;
+                    fbo2 = temp;
+                }
+            };
+        }
+
+        // ============ FLUID SIMULATION ============
+        class FluidSimulation {
+            constructor(canvas, width, height) {
+                const gl = canvas.getContext('webgl2', { 
+                    alpha: false, 
+                    antialias: false, 
+                    preserveDrawingBuffer: true 
+                });
+                if (!gl) throw new Error('WebGL2 not supported');
+                this.gl = gl;
+                this.width = width;
+                this.height = height;
+
+                gl.getExtension('EXT_color_buffer_float');
+                gl.getExtension('OES_texture_float_linear');
+
+                const simRes = 512;
+                this.density = createDoubleFBO(gl, simRes, simRes);
+                this.velocity = createDoubleFBO(gl, simRes, simRes);
+                this.divergence = createFBO(gl, simRes, simRes);
+                this.curl = createFBO(gl, simRes, simRes);
+                this.pressure = createDoubleFBO(gl, simRes, simRes);
+
+                this.advectionProgram = createProgram(gl, BASE_VERTEX_SHADER, ADVECTION_SHADER);
+                this.divergenceProgram = createProgram(gl, BASE_VERTEX_SHADER, DIVERGENCE_SHADER);
+                this.curlProgram = createProgram(gl, BASE_VERTEX_SHADER, CURL_SHADER);
+                this.vorticityProgram = createProgram(gl, BASE_VERTEX_SHADER, VORTICITY_SHADER);
+                this.pressureProgram = createProgram(gl, BASE_VERTEX_SHADER, PRESSURE_SHADER);
+                this.gradientSubtractProgram = createProgram(gl, BASE_VERTEX_SHADER, GRADIENT_SUBTRACT_SHADER);
+                this.splatProgram = createProgram(gl, BASE_VERTEX_SHADER, SPLAT_SHADER);
+                this.displayProgram = createProgram(gl, BASE_VERTEX_SHADER, DISPLAY_SHADER);
+
+                const buffer = gl.createBuffer();
+                gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+                gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, -1, 1, 1, 1, 1, -1]), gl.STATIC_DRAW);
+                gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, gl.createBuffer());
+                gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array([0, 1, 2, 0, 2, 3]), gl.STATIC_DRAW);
+                
+                const aPosition = gl.getAttribLocation(this.advectionProgram, 'aPosition');
+                gl.vertexAttribPointer(aPosition, 2, gl.FLOAT, false, 0, 0);
+                gl.enableVertexAttribArray(aPosition);
+
+                this.lastTime = 0;
+            }
+
+            splat(x, y, dx, dy, color, config, isRadial = false) {
+                const gl = this.gl;
+                gl.useProgram(this.splatProgram);
+
+                const uTarget = gl.getUniformLocation(this.splatProgram, 'uTarget');
+                const uAspectRatio = gl.getUniformLocation(this.splatProgram, 'aspectRatio');
+                const uColor = gl.getUniformLocation(this.splatProgram, 'color');
+                const uPoint = gl.getUniformLocation(this.splatProgram, 'point');
+                const uRadius = gl.getUniformLocation(this.splatProgram, 'radius');
+                const uMode = gl.getUniformLocation(this.splatProgram, 'uMode');
+
+                gl.uniform1i(uTarget, 0);
+                gl.uniform1f(uAspectRatio, this.width / this.height);
+                gl.uniform2f(uPoint, x, 1.0 - y);
+                gl.uniform1f(uRadius, config.radius / 1000.0);
+
+                gl.viewport(0, 0, this.velocity.width, this.velocity.height);
+                gl.bindFramebuffer(gl.FRAMEBUFFER, this.velocity.write.fbo);
+                gl.activeTexture(gl.TEXTURE0);
+                gl.bindTexture(gl.TEXTURE_2D, this.velocity.read.texture);
+                
+                if (isRadial) {
+                    gl.uniform1i(uMode, 1);
+                    gl.uniform3f(uColor, dx, 0.0, 0.0); 
+                } else {
+                    gl.uniform1i(uMode, 0);
+                    gl.uniform3f(uColor, dx, -dy, 0.0);
+                }
+                
+                gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0);
+                this.velocity.swap();
+
+                gl.viewport(0, 0, this.density.width, this.density.height);
+                gl.bindFramebuffer(gl.FRAMEBUFFER, this.density.write.fbo);
+                gl.activeTexture(gl.TEXTURE0);
+                gl.bindTexture(gl.TEXTURE_2D, this.density.read.texture);
+                gl.uniform1i(uMode, 0);
+                gl.uniform3f(uColor, color[0], color[1], color[2]);
+                gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0);
+                this.density.swap();
+            }
+
+            step(dt, config) {
+                const gl = this.gl;
+                
+                // 1. Curl
+                gl.viewport(0, 0, this.curl.width, this.curl.height);
+                gl.useProgram(this.curlProgram);
+                gl.uniform2f(gl.getUniformLocation(this.curlProgram, 'texelSize'), this.velocity.texelSizeX, this.velocity.texelSizeY);
+                gl.uniform1i(gl.getUniformLocation(this.curlProgram, 'uVelocity'), 0);
+                gl.activeTexture(gl.TEXTURE0);
+                gl.bindTexture(gl.TEXTURE_2D, this.velocity.read.texture);
+                gl.bindFramebuffer(gl.FRAMEBUFFER, this.curl.fbo);
+                gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0);
+
+                // 2. Vorticity
+                gl.viewport(0, 0, this.velocity.width, this.velocity.height);
+                gl.useProgram(this.vorticityProgram);
+                gl.uniform2f(gl.getUniformLocation(this.vorticityProgram, 'texelSize'), this.velocity.texelSizeX, this.velocity.texelSizeY);
+                gl.uniform1i(gl.getUniformLocation(this.vorticityProgram, 'uVelocity'), 0);
+                gl.uniform1i(gl.getUniformLocation(this.vorticityProgram, 'uCurl'), 1);
+                gl.uniform1f(gl.getUniformLocation(this.vorticityProgram, 'curl'), config.vorticity);
+                gl.uniform1f(gl.getUniformLocation(this.vorticityProgram, 'dt'), dt);
+                gl.activeTexture(gl.TEXTURE0);
+                gl.bindTexture(gl.TEXTURE_2D, this.velocity.read.texture);
+                gl.activeTexture(gl.TEXTURE1);
+                gl.bindTexture(gl.TEXTURE_2D, this.curl.texture);
+                gl.bindFramebuffer(gl.FRAMEBUFFER, this.velocity.write.fbo);
+                gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0);
+                this.velocity.swap();
+
+                // 3. Divergence
+                gl.viewport(0, 0, this.divergence.width, this.divergence.height);
+                gl.useProgram(this.divergenceProgram);
+                gl.uniform2f(gl.getUniformLocation(this.divergenceProgram, 'texelSize'), this.velocity.texelSizeX, this.velocity.texelSizeY);
+                gl.uniform1i(gl.getUniformLocation(this.divergenceProgram, 'uVelocity'), 0);
+                gl.activeTexture(gl.TEXTURE0);
+                gl.bindTexture(gl.TEXTURE_2D, this.velocity.read.texture);
+                gl.bindFramebuffer(gl.FRAMEBUFFER, this.divergence.fbo);
+                gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0);
+
+                // 4. Pressure
+                gl.viewport(0, 0, this.pressure.width, this.pressure.height);
+                gl.useProgram(this.pressureProgram);
+                gl.uniform2f(gl.getUniformLocation(this.pressureProgram, 'texelSize'), this.pressure.texelSizeX, this.pressure.texelSizeY);
+                gl.uniform1i(gl.getUniformLocation(this.pressureProgram, 'uDivergence'), 0);
+                gl.activeTexture(gl.TEXTURE0);
+                gl.bindTexture(gl.TEXTURE_2D, this.divergence.texture);
+                const uPressureLoc = gl.getUniformLocation(this.pressureProgram, 'uPressure');
+                gl.uniform1i(uPressureLoc, 1);
+
+                for (let i = 0; i < 20; i++) {
+                    gl.bindFramebuffer(gl.FRAMEBUFFER, this.pressure.write.fbo);
+                    gl.activeTexture(gl.TEXTURE1);
+                    gl.bindTexture(gl.TEXTURE_2D, this.pressure.read.texture);
+                    gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0);
+                    this.pressure.swap();
+                }
+
+                // 5. Gradient Subtract
+                gl.viewport(0, 0, this.velocity.width, this.velocity.height);
+                gl.useProgram(this.gradientSubtractProgram);
+                gl.uniform2f(gl.getUniformLocation(this.gradientSubtractProgram, 'texelSize'), this.velocity.texelSizeX, this.velocity.texelSizeY);
+                gl.uniform1i(gl.getUniformLocation(this.gradientSubtractProgram, 'uPressure'), 0);
+                gl.uniform1i(gl.getUniformLocation(this.gradientSubtractProgram, 'uVelocity'), 1);
+                gl.activeTexture(gl.TEXTURE0);
+                gl.bindTexture(gl.TEXTURE_2D, this.pressure.read.texture);
+                gl.activeTexture(gl.TEXTURE1);
+                gl.bindTexture(gl.TEXTURE_2D, this.velocity.read.texture);
+                gl.bindFramebuffer(gl.FRAMEBUFFER, this.velocity.write.fbo);
+                gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0);
+                this.velocity.swap();
+
+                // 6. Advection (Velocity)
+                gl.viewport(0, 0, this.velocity.width, this.velocity.height);
+                gl.useProgram(this.advectionProgram);
+                gl.uniform2f(gl.getUniformLocation(this.advectionProgram, 'texelSize'), this.velocity.texelSizeX, this.velocity.texelSizeY);
+                gl.uniform1f(gl.getUniformLocation(this.advectionProgram, 'dt'), dt);
+                gl.uniform1f(gl.getUniformLocation(this.advectionProgram, 'dissipation'), config.dissipation);
+                gl.uniform1i(gl.getUniformLocation(this.advectionProgram, 'uVelocity'), 0);
+                gl.uniform1i(gl.getUniformLocation(this.advectionProgram, 'uSource'), 0);
+                gl.activeTexture(gl.TEXTURE0);
+                gl.bindTexture(gl.TEXTURE_2D, this.velocity.read.texture);
+                gl.bindFramebuffer(gl.FRAMEBUFFER, this.velocity.write.fbo);
+                gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0);
+                this.velocity.swap();
+
+                // 7. Advection (Density/Color)
+                gl.viewport(0, 0, this.density.width, this.density.height);
+                gl.useProgram(this.advectionProgram);
+                gl.uniform2f(gl.getUniformLocation(this.advectionProgram, 'texelSize'), this.density.texelSizeX, this.density.texelSizeY);
+                gl.uniform1f(gl.getUniformLocation(this.advectionProgram, 'dissipation'), config.dissipation * 0.99);
+                gl.uniform1i(gl.getUniformLocation(this.advectionProgram, 'uVelocity'), 0);
+                gl.uniform1i(gl.getUniformLocation(this.advectionProgram, 'uSource'), 1);
+                gl.activeTexture(gl.TEXTURE0);
+                gl.bindTexture(gl.TEXTURE_2D, this.velocity.read.texture);
+                gl.activeTexture(gl.TEXTURE1);
+                gl.bindTexture(gl.TEXTURE_2D, this.density.read.texture);
+                gl.bindFramebuffer(gl.FRAMEBUFFER, this.density.write.fbo);
+                gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0);
+                this.density.swap();
+            }
+
+            render(config) {
+                const gl = this.gl;
+                gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+                gl.viewport(0, 0, this.width, this.height);
+                gl.clearColor(0, 0, 0, 1);
+                gl.clear(gl.COLOR_BUFFER_BIT);
+
+                gl.useProgram(this.displayProgram);
+                gl.activeTexture(gl.TEXTURE0);
+                gl.bindTexture(gl.TEXTURE_2D, this.density.read.texture);
+                gl.uniform1i(gl.getUniformLocation(this.displayProgram, 'uTexture'), 0);
+                gl.uniform2f(gl.getUniformLocation(this.displayProgram, 'texelSize'), 1.0/this.width, 1.0/this.height);
+                
+                let mode = 0;
+                const modeMap = {
+                    [VisualStyle.NEON_FIRE]: 0,
+                    [VisualStyle.ELECTRIC_PLASMA]: 1,
+                    [VisualStyle.LIQUID_GLASS]: 2,
+                    [VisualStyle.NEBULA_SPIRALS]: 3,
+                    [VisualStyle.MOLTEN_CORE]: 4,
+                    [VisualStyle.ARCTIC_FROST]: 5,
+                    [VisualStyle.GOLDEN_ICHOR]: 6,
+                    [VisualStyle.VAPOR_WAVE]: 7,
+                    [VisualStyle.SHADOW_MIST]: 8,
+                    [VisualStyle.COSMIC_DUST]: 9,
+                    [VisualStyle.BIOLUMINESCENCE]: 10,
+                    [VisualStyle.CYBER_INK]: 11,
+                    [VisualStyle.CHERRY_BLOSSOM]: 12,
+                    [VisualStyle.EMERALD_CITY]: 13,
+                    [VisualStyle.VOLCANIC_ASH]: 14,
+                    [VisualStyle.CANDY_LAND]: 15,
+                };
+                mode = modeMap[config.style] || 0;
+                gl.uniform1i(gl.getUniformLocation(this.displayProgram, 'uMode'), mode);
+
+                gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0);
+            }
+        }
+
+        // ============ LUCIDE ICONS (Inline SVG) ============
+        const Icon = ({ name, size = 20 }) => {
+            const icons = {
+                Menu: '<path d="M3 12h18M3 6h18M3 18h18"/>',
+                X: '<path d="M18 6 6 18M6 6l12 12"/>',
+                Flame: '<path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/>',
+                Zap: '<path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/>',
+                Droplets: '<path d="M7 16.3c2.2 0 4-1.83 4-4.05 0-1.16-.57-2.26-1.71-3.19S7.29 6.75 7 5.3c-.29 1.45-1.14 2.84-2.29 3.76S3 11.1 3 12.25c0 2.22 1.8 4.05 4 4.05z"/><path d="M12.56 6.6A10.97 10.97 0 0 0 14 3.02c.5 2.5 2 4.9 4 6.5s3 3.5 3 5.5a6.98 6.98 0 0 1-11.91 4.97"/>',
+                Wind: '<path d="M17.7 7.7a2.5 2.5 0 1 1 1.8 4.3H2"/><path d="M9.6 4.6A2 2 0 1 1 11 8H2"/><path d="M12.6 19.4A2 2 0 1 0 14 16H2"/>',
+                Snowflake: '<line x1="2" x2="22" y1="12" y2="12"/><line x1="12" x2="12" y1="2" y2="22"/><path d="m20 16-4-4 4-4"/><path d="m4 8 4 4-4 4"/><path d="m16 4-4 4-4-4"/><path d="m8 20 4-4 4 4"/>',
+                Sparkles: '<path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/>',
+                Hexagon: '<path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>',
+                Sunset: '<path d="M12 10V2"/><path d="m4.93 10.93 1.41 1.41"/><path d="M2 18h2"/><path d="M20 18h2"/><path d="m19.07 10.93-1.41 1.41"/><path d="M22 22H2"/><path d="m16 6-4 4-4-4"/><path d="M16 18a4 4 0 0 0-8 0"/>',
+                Ghost: '<path d="M9 10h.01"/><path d="M15 10h.01"/><path d="M12 2a8 8 0 0 0-8 8v12l3-3 2.5 2.5L12 19l2.5 2.5L17 19l3 3V10a8 8 0 0 0-8-8z"/>',
+                Stars: '<path d="M12 3v18m6-15-12 12m0-12 12 12"/>',
+                Lightbulb: '<path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/>',
+                PenTool: '<path d="M15.707 21.293a1 1 0 0 1-1.414 0l-1.586-1.586a1 1 0 0 1 0-1.414l5.586-5.586a1 1 0 0 1 1.414 0l1.586 1.586a1 1 0 0 1 0 1.414z"/><path d="m18 13-1.375-6.874a1 1 0 0 0-.746-.776L3.235 2.028a.5.5 0 0 0-.498.498L5.376 15.17a1 1 0 0 0 .776.746L13 17"/><path d="m2.3 2.3 7.286 7.286"/><circle cx="11" cy="11" r="2"/>',
+                Flower: '<circle cx="12" cy="12" r="3"/><path d="M12 16.5A4.5 4.5 0 1 1 7.5 12 4.5 4.5 0 1 1 12 7.5a4.5 4.5 0 1 1 4.5 4.5 4.5 4.5 0 1 1-4.5 4.5"/><path d="M12 7.5V9"/><path d="M7.5 12H9"/><path d="M16.5 12H15"/><path d="M12 16.5V15"/><path d="m8 8 1.88 1.88"/><path d="M14.12 9.88 16 8"/><path d="m8 16 1.88-1.88"/><path d="M14.12 14.12 16 16"/>',
+                Gem: '<path d="M6 3h12l4 6-10 13L2 9Z"/><path d="M11 3 8 9l4 13 4-13-3-6"/>',
+                Mountain: '<path d="m8 3 4 8 5-5 5 15H2L8 3z"/>',
+                Candy: '<path d="m9.5 7.5-2 2a4.95 4.95 0 1 0 7 7l2-2a4.95 4.95 0 1 0-7-7Z"/><path d="M14 6.5v10"/><path d="M10 7.5v10"/><path d="m16 7 1-5 1.37.68A3 3 0 0 0 19.7 3H21v1.3c0 .46.1.92.32 1.33L22 7l-5 1"/><path d="m8 17-1 5-1.37-.68A3 3 0 0 0 4.3 21H3v-1.3a3 3 0 0 0-.32-1.33L2 17l5-1"/>',
+                Play: '<polygon points="6 3 20 12 6 21 6 3"/>',
+                Pause: '<rect x="14" y="4" width="4" height="16" rx="1"/><rect x="6" y="4" width="4" height="16" rx="1"/>',
+                Camera: '<path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/>',
+            };
+            
+            return (
+                <svg 
+                    width={size} 
+                    height={size} 
+                    viewBox="0 0 24 24" 
+                    fill="none" 
+                    stroke="currentColor" 
+                    strokeWidth="2" 
+                    strokeLinecap="round" 
+                    strokeLinejoin="round"
+                    dangerouslySetInnerHTML={{ __html: icons[name] || icons.Flame }}
+                />
+            );
+        };
+
+        // ============ CONTROLS COMPONENT ============
+        const Controls = ({ config, onChange, isPaused, onTogglePause, onSaveWallpaper }) => {
+            const [isOpen, setIsOpen] = useState(true);
+
+            const handleSliderChange = (key, value) => {
+                onChange({ ...config, [key]: value });
+            };
+
+            const handleStyleChange = (style) => {
+                let newConfig = { ...config, style };
+                const presets = {
+                    [VisualStyle.NEON_FIRE]: { viscosity: 0.1, dissipation: 0.98, vorticity: 15, radius: 0.8 },
+                    [VisualStyle.ELECTRIC_PLASMA]: { viscosity: 0.0, dissipation: 0.96, vorticity: 40, radius: 0.6 },
+                    [VisualStyle.LIQUID_GLASS]: { viscosity: 0.3, dissipation: 0.99, vorticity: 5, radius: 1.2 },
+                    [VisualStyle.NEBULA_SPIRALS]: { viscosity: 0.05, dissipation: 0.995, vorticity: 25, radius: 1.5 },
+                    [VisualStyle.ARCTIC_FROST]: { viscosity: 0.1, dissipation: 0.97, vorticity: 50, radius: 0.9 },
+                    [VisualStyle.GOLDEN_ICHOR]: { viscosity: 0.4, dissipation: 0.992, vorticity: 8, radius: 1.1 },
+                    [VisualStyle.MOLTEN_CORE]: { viscosity: 0.6, dissipation: 0.985, vorticity: 5, radius: 1.3 },
+                    [VisualStyle.VAPOR_WAVE]: { viscosity: 0.2, dissipation: 0.99, vorticity: 15, radius: 1.0 },
+                    [VisualStyle.SHADOW_MIST]: { viscosity: 0.1, dissipation: 0.96, vorticity: 35, radius: 0.8 },
+                    [VisualStyle.COSMIC_DUST]: { viscosity: 0.05, dissipation: 0.95, vorticity: 60, radius: 0.6 },
+                    [VisualStyle.BIOLUMINESCENCE]: { viscosity: 0.2, dissipation: 0.98, vorticity: 20, radius: 0.9 },
+                    [VisualStyle.CYBER_INK]: { viscosity: 0.05, dissipation: 0.985, vorticity: 30, radius: 1.0 },
+                    [VisualStyle.CHERRY_BLOSSOM]: { viscosity: 0.05, dissipation: 0.99, vorticity: 30, radius: 1.0 },
+                    [VisualStyle.EMERALD_CITY]: { viscosity: 0.15, dissipation: 0.98, vorticity: 25, radius: 1.0 },
+                    [VisualStyle.VOLCANIC_ASH]: { viscosity: 0.15, dissipation: 0.96, vorticity: 45, radius: 0.7 },
+                    [VisualStyle.CANDY_LAND]: { viscosity: 0.2, dissipation: 0.98, vorticity: 25, radius: 0.9 },
+                };
+                newConfig = { ...newConfig, ...presets[style] };
+                onChange(newConfig);
+            };
+
+            const getIconName = (style) => {
+                const iconMap = {
+                    [VisualStyle.NEON_FIRE]: 'Flame',
+                    [VisualStyle.ELECTRIC_PLASMA]: 'Zap',
+                    [VisualStyle.LIQUID_GLASS]: 'Droplets',
+                    [VisualStyle.NEBULA_SPIRALS]: 'Wind',
+                    [VisualStyle.ARCTIC_FROST]: 'Snowflake',
+                    [VisualStyle.GOLDEN_ICHOR]: 'Sparkles',
+                    [VisualStyle.MOLTEN_CORE]: 'Hexagon',
+                    [VisualStyle.VAPOR_WAVE]: 'Sunset',
+                    [VisualStyle.SHADOW_MIST]: 'Ghost',
+                    [VisualStyle.COSMIC_DUST]: 'Stars',
+                    [VisualStyle.BIOLUMINESCENCE]: 'Lightbulb',
+                    [VisualStyle.CYBER_INK]: 'PenTool',
+                    [VisualStyle.CHERRY_BLOSSOM]: 'Flower',
+                    [VisualStyle.EMERALD_CITY]: 'Gem',
+                    [VisualStyle.VOLCANIC_ASH]: 'Mountain',
+                    [VisualStyle.CANDY_LAND]: 'Candy',
+                };
+                return iconMap[style] || 'Flame';
+            };
+
+            return (
+                <>
+                    <button 
+                        onClick={() => setIsOpen(!isOpen)}
+                        className="fixed top-4 right-4 z-50 p-3 bg-white/10 backdrop-blur-md rounded-full border border-white/20 text-white hover:bg-white/20 transition-all shadow-lg"
+                    >
+                        <Icon name={isOpen ? 'X' : 'Menu'} size={24} />
+                    </button>
+
+                    <div className="fixed bottom-8 left-1/2 transform -translate-x-1/2 z-50 flex gap-4">
+                        <button
+                            onClick={onSaveWallpaper}
+                            className="px-6 py-4 rounded-full backdrop-blur-md border bg-white/10 border-white/20 text-white hover:bg-white/20 transition-all shadow-2xl flex items-center gap-2 group"
+                        >
+                            <Icon name="Camera" size={24} />
+                            <span className="font-bold tracking-wide text-sm uppercase hidden sm:block">Save Wallpaper</span>
+                        </button>
+
+                        <button
+                            onClick={onTogglePause}
+                            className={`px-8 py-4 rounded-full backdrop-blur-md border transition-all shadow-2xl flex items-center gap-3 ${
+                                isPaused 
+                                ? 'bg-red-500/20 border-red-500/50 text-red-100 hover:bg-red-500/30' 
+                                : 'bg-white/10 border-white/20 text-white hover:bg-white/20'
+                            }`}
+                        >
+                            <Icon name={isPaused ? 'Play' : 'Pause'} size={24} />
+                            <span className="font-bold tracking-widest text-lg hidden sm:block">
+                                {isPaused ? "RESUME" : "FREEZE"}
+                            </span>
+                        </button>
+                    </div>
+
+                    <div 
+                        className={`fixed top-0 right-0 h-full w-80 bg-black/60 backdrop-blur-xl border-l border-white/10 shadow-2xl z-40 transform transition-transform duration-500 ease-in-out p-6 pt-20 overflow-y-auto ${
+                            isOpen ? 'translate-x-0' : 'translate-x-full'
+                        }`}
+                    >
+                        <h2 className="text-2xl font-light text-white mb-8 tracking-wider">Fluix</h2>
+
+                        <div className="space-y-8">
+                            <div className="space-y-3">
+                                <label className="text-xs uppercase tracking-widest text-white/50 font-bold">Presets</label>
+                                <div className="grid grid-cols-2 gap-3">
+                                    {Object.values(VisualStyle).map((style) => (
+                                        <button
+                                            key={style}
+                                            onClick={() => handleStyleChange(style)}
+                                            className={`p-4 rounded-xl flex flex-col items-center gap-2 transition-all duration-300 border ${
+                                                config.style === style 
+                                                ? 'bg-white/20 border-white/50 text-white shadow-[0_0_15px_rgba(255,255,255,0.3)]' 
+                                                : 'bg-white/5 border-white/5 text-white/60 hover:bg-white/10 hover:text-white'
+                                            }`}
+                                        >
+                                            <Icon name={getIconName(style)} size={20} />
+                                            <span className="text-xs font-medium text-center">{style.replace(/_/g, ' ')}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div className="space-y-6">
+                                <div className="space-y-2">
+                                    <div className="flex justify-between text-white/80 text-sm">
+                                        <span>Dissipation</span>
+                                        <span>{Math.round(config.dissipation * 100)}%</span>
+                                    </div>
+                                    <input 
+                                        type="range" min="0.9" max="0.999" step="0.001" 
+                                        value={config.dissipation}
+                                        onChange={(e) => handleSliderChange('dissipation', parseFloat(e.target.value))}
+                                        className="w-full h-1 bg-white/20 rounded-lg appearance-none cursor-pointer"
+                                        style={{
+                                            WebkitAppearance: 'none',
+                                        }}
+                                    />
+                                </div>
+
+                                <div className="space-y-2">
+                                    <div className="flex justify-between text-white/80 text-sm">
+                                        <span>Vorticity</span>
+                                        <span>{config.vorticity}</span>
+                                    </div>
+                                    <input 
+                                        type="range" min="0" max="50" step="1" 
+                                        value={config.vorticity}
+                                        onChange={(e) => handleSliderChange('vorticity', parseFloat(e.target.value))}
+                                        className="w-full h-1 bg-white/20 rounded-lg appearance-none cursor-pointer"
+                                    />
+                                </div>
+
+                                <div className="space-y-2">
+                                    <div className="flex justify-between text-white/80 text-sm">
+                                        <span>Touch Radius</span>
+                                        <span>{config.radius.toFixed(1)}</span>
+                                    </div>
+                                    <input 
+                                        type="range" min="0.1" max="2.0" step="0.1" 
+                                        value={config.radius}
+                                        onChange={(e) => handleSliderChange('radius', parseFloat(e.target.value))}
+                                        className="w-full h-1 bg-white/20 rounded-lg appearance-none cursor-pointer"
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="pt-4 border-t border-white/10">
+                                <p className="text-xs text-white/40 leading-relaxed">
+                                    Based on Navier-Stokes equations for incompressible flow. 
+                                    Uses Jacobi iteration for pressure solving and vorticity confinement for detailed swirls.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <style>{`
+                        input[type="range"]::-webkit-slider-thumb {
+                            -webkit-appearance: none;
+                            appearance: none;
+                            width: 16px;
+                            height: 16px;
+                            border-radius: 50%;
+                            background: white;
+                            cursor: pointer;
+                        }
+                        input[type="range"]::-moz-range-thumb {
+                            width: 16px;
+                            height: 16px;
+                            border-radius: 50%;
+                            background: white;
+                            cursor: pointer;
+                            border: none;
+                        }
+                    `}</style>
+                </>
+            );
+        };
+
+        // ============ MAIN APP ============
+        function App() {
+            const canvasRef = useRef(null);
+            const simulationRef = useRef(null);
+            
+            const [config, setConfig] = useState({
+                viscosity: 0.1,
+                dissipation: 0.98,
+                vorticity: 30,
+                radius: 0.8,
+                pressure: 0.8,
+                style: VisualStyle.NEON_FIRE,
+            });
+
+            const [isPaused, setIsPaused] = useState(false);
+
+            const configRef = useRef(config);
+            const isPausedRef = useRef(isPaused);
+
+            useEffect(() => {
+                configRef.current = config;
+            }, [config]);
+
+            useEffect(() => {
+                isPausedRef.current = isPaused;
+            }, [isPaused]);
+
+            const pointers = useRef(new Map());
+            const colorRef = useRef({r: 1, g: 0, b: 0});
+            const colorPhase = useRef(0);
+
+            useEffect(() => {
+                const canvas = canvasRef.current;
+                if (!canvas) return;
+
+                const dpr = window.devicePixelRatio || 1;
+                canvas.width = window.innerWidth * dpr;
+                canvas.height = window.innerHeight * dpr;
+                
+                if (!simulationRef.current) {
+                    try {
+                        simulationRef.current = new FluidSimulation(canvas, canvas.width, canvas.height);
+                    } catch (e) {
+                        console.error("WebGL 2 Initialization Failed", e);
+                        return;
+                    }
+                }
+
+                let animationId;
+                let lastTime = performance.now();
+
+                const loop = (time) => {
+                    const dt = Math.min((time - lastTime) / 1000, 0.016);
+                    lastTime = time;
+
+                    if (simulationRef.current) {
+                        colorPhase.current += dt * 2.0;
+                        const r = Math.sin(colorPhase.current) * 0.5 + 0.5;
+                        const g = Math.sin(colorPhase.current + 2) * 0.5 + 0.5;
+                        const b = Math.sin(colorPhase.current + 4) * 0.5 + 0.5;
+                        colorRef.current = { r, g, b };
+
+                        const currentConfig = configRef.current;
+                        const paused = isPausedRef.current;
+
+                        pointers.current.forEach((p) => {
+                            let splatColor = [r, g, b];
+                            
+                            const colorMap = {
+                                [VisualStyle.NEON_FIRE]: [1.0, 0.1, 0.05],
+                                [VisualStyle.ELECTRIC_PLASMA]: [0.1, 0.5, 1.0],
+                                [VisualStyle.LIQUID_GLASS]: [1.0, 1.0, 1.0],
+                                [VisualStyle.ARCTIC_FROST]: [0.5, 0.8, 1.0],
+                                [VisualStyle.GOLDEN_ICHOR]: [1.0, 0.8, 0.1],
+                                [VisualStyle.MOLTEN_CORE]: [1.0, 0.2, 0.0],
+                                [VisualStyle.VAPOR_WAVE]: [1.0, 0.4, 0.8],
+                                [VisualStyle.SHADOW_MIST]: [0.6, 0.6, 0.7],
+                                [VisualStyle.COSMIC_DUST]: [0.6, 0.2, 0.9],
+                                [VisualStyle.BIOLUMINESCENCE]: [0.0, 0.8, 0.6],
+                                [VisualStyle.CYBER_INK]: [0.0, 1.0, 1.0],
+                                [VisualStyle.CHERRY_BLOSSOM]: [1.0, 0.6, 0.7],
+                                [VisualStyle.EMERALD_CITY]: [0.0, 1.0, 0.4],
+                                [VisualStyle.VOLCANIC_ASH]: [0.3, 0.3, 0.3],
+                                [VisualStyle.CANDY_LAND]: [0.4, 0.7, 1.0],
+                            };
+                            
+                            if (colorMap[currentConfig.style]) {
+                                splatColor = colorMap[currentConfig.style];
+                            }
+
+                            const centerX = 0.5;
+                            const centerY = 0.5;
+                            let dirX = centerX - p.x;
+                            let dirY = centerY - p.y;
+                            const len = Math.sqrt(dirX * dirX + dirY * dirY);
+                            if (len > 0.0001) {
+                                dirX /= len;
+                                dirY /= len;
+                            } else {
+                                dirX = 1; 
+                                dirY = 0;
+                            }
+
+                            const FORCE = 180.0; 
+                            let inputDx = dirX * FORCE;
+                            let inputDy = dirY * FORCE;
+                            
+                            splatColor = splatColor.map(c => c * 5.0);
+                            
+                            let splatConfig = { ...currentConfig };
+                            splatConfig.radius = currentConfig.radius * 3.0;
+
+                            simulationRef.current?.splat(p.x, p.y, inputDx, inputDy, splatColor, splatConfig, false);
+
+                            p.prevX = p.x;
+                            p.prevY = p.y;
+                        });
+
+                        if (!paused) {
+                            const isBeamActive = pointers.current.size > 0;
+                            let physicsConfig = { ...currentConfig };
+                            if (isBeamActive) {
+                                physicsConfig.vorticity = 0.0; 
+                                physicsConfig.dissipation = 0.995; 
+                                physicsConfig.viscosity = 0.0; 
+                            }
+                            simulationRef.current.step(dt, physicsConfig);
+                        }
+                        
+                        simulationRef.current.render(currentConfig);
+                    }
+                    animationId = requestAnimationFrame(loop);
+                };
+
+                animationId = requestAnimationFrame(loop);
+
+                return () => cancelAnimationFrame(animationId);
+            }, []);
+
+            const handlePointerDown = (e) => {
+                e.currentTarget.setPointerCapture(e.pointerId);
+                const rect = canvasRef.current.getBoundingClientRect();
+                const x = (e.clientX - rect.left) / rect.width;
+                const y = (e.clientY - rect.top) / rect.height;
+                
+                pointers.current.set(e.pointerId, { 
+                    x, y, 
+                    prevX: x, prevY: y, 
+                    color: colorRef.current 
+                });
+            };
+
+            const handlePointerMove = (e) => {
+                const ptr = pointers.current.get(e.pointerId);
+                if (ptr) {
+                    const rect = canvasRef.current.getBoundingClientRect();
+                    ptr.x = (e.clientX - rect.left) / rect.width;
+                    ptr.y = (e.clientY - rect.top) / rect.height;
+                }
+            };
+
+            const handlePointerUp = (e) => {
+                pointers.current.delete(e.pointerId);
+            };
+
+            const handleSaveWallpaper = () => {
+                const canvas = canvasRef.current;
+                if (!canvas) return;
+                
+                const link = document.createElement('a');
+                const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+                link.download = `Fluix-Wallpaper-${timestamp}.png`;
+                link.href = canvas.toDataURL('image/png', 1.0);
+                link.click();
+            };
+
+            return (
+                <div className="relative w-full h-screen bg-black overflow-hidden">
+                    <canvas
+                        ref={canvasRef}
+                        className="w-full h-full touch-none cursor-crosshair"
+                        onPointerDown={handlePointerDown}
+                        onPointerMove={handlePointerMove}
+                        onPointerUp={handlePointerUp}
+                        onPointerLeave={handlePointerUp}
+                    />
+                    
+                    <div className="absolute top-8 left-8 pointer-events-none select-none mix-blend-difference text-white opacity-80 z-10">
+                        <h1 className="text-4xl font-light tracking-tighter mb-2">Fluix</h1>
+                        <p className="text-sm font-mono opacity-60">
+                            {isPaused ? "TIME FROZEN. Paint to queue flows." : "Hold to shoot energy beams."}
+                        </p>
+                    </div>
+
+                    <Controls 
+                        config={config} 
+                        onChange={setConfig} 
+                        isPaused={isPaused}
+                        onTogglePause={() => setIsPaused(!isPaused)}
+                        onSaveWallpaper={handleSaveWallpaper}
+                    />
+                </div>
+            );
+        }
+
+        // ============ RENDER APP ============
+        const rootElement = document.getElementById('root');
+        const root = ReactDOM.createRoot(rootElement);
+        root.render(<App />);
+    </script>
+</body>
+</html>

@@ -1,0 +1,687 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Flux Recorder</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['Outfit', 'sans-serif'],
+            },
+            animation: {
+              'blob': 'blob 7s infinite',
+              'fade-in': 'fadeIn 0.6s ease-out forwards',
+              'slide-up': 'slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards',
+              'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+              'float': 'float 6s ease-in-out infinite',
+              'gradient-x': 'gradient-x 15s ease infinite',
+              'scale-in': 'scaleIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards',
+            },
+            keyframes: {
+              blob: {
+                '0%': { transform: 'translate(0px, 0px) scale(1)' },
+                '33%': { transform: 'translate(30px, -50px) scale(1.1)' },
+                '66%': { transform: 'translate(-20px, 20px) scale(0.9)' },
+                '100%': { transform: 'translate(0px, 0px) scale(1)' },
+              },
+              fadeIn: {
+                '0%': { opacity: '0', filter: 'blur(10px)' },
+                '100%': { opacity: '1', filter: 'blur(0)' },
+              },
+              slideUp: {
+                '0%': { transform: 'translateY(40px)', opacity: '0' },
+                '100%': { transform: 'translateY(0)', opacity: '1' },
+              },
+              float: {
+                '0%, 100%': { transform: 'translateY(0)' },
+                '50%': { transform: 'translateY(-10px)' },
+              },
+              'gradient-x': {
+                '0%, 100%': {
+                    'background-size': '200% 200%',
+                    'background-position': 'left center'
+                },
+                '50%': {
+                    'background-size': '200% 200%',
+                    'background-position': 'right center'
+                },
+              },
+              scaleIn: {
+                '0%': { transform: 'scale(0.9)', opacity: '0' },
+                '100%': { transform: 'scale(1)', opacity: '1' },
+              }
+            }
+          }
+        }
+      }
+    </script>
+    <style>
+      body {
+        background-color: #0f172a;
+        color: white;
+        overflow-x: hidden;
+      }
+      .glass-panel {
+        background: rgba(255, 255, 255, 0.03);
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+      }
+      .glass-button {
+        background: rgba(255, 255, 255, 0.08);
+        backdrop-filter: blur(8px);
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+      }
+      .glass-button:hover {
+        background: rgba(255, 255, 255, 0.15);
+        box-shadow: 0 0 20px rgba(255, 255, 255, 0.2);
+        transform: translateY(-2px);
+      }
+      .glass-button:active {
+        transform: translateY(0);
+      }
+      ::-webkit-scrollbar {
+        width: 6px;
+      }
+      ::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 10px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: rgba(255, 255, 255, 0.2);
+      }
+    </style>
+    <script type="importmap">
+    {
+      "imports": {
+        "react": "https://esm.sh/react@18.2.0",
+        "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+        "lucide-react": "https://esm.sh/lucide-react@0.263.1"
+      }
+    }
+    </script>
+</head>
+<body>
+    <div id="root"></div>
+    <script type="module">
+      import React, { useState, useRef, useEffect, createElement as h } from 'react';
+      import ReactDOM from 'react-dom/client';
+      import { Mic, MicOff, Circle, StopCircle, Zap, Settings2, ChevronDown, Check, RefreshCw, Download, Play, Pause, Volume2, VolumeX, Maximize } from 'lucide-react';
+
+      const AppState = {
+        IDLE: 'IDLE',
+        RECORDING: 'RECORDING',
+        PREVIEW: 'PREVIEW',
+      };
+
+      const Background = () => {
+        return h('div', { className: "fixed inset-0 w-full h-full -z-10 overflow-hidden bg-slate-900" },
+          h('div', { className: "absolute top-0 left-1/4 w-96 h-96 bg-purple-500 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob" }),
+          h('div', { className: "absolute top-0 right-1/4 w-96 h-96 bg-cyan-500 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob" }),
+          h('div', { className: "absolute -bottom-32 left-1/3 w-96 h-96 bg-pink-500 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob" }),
+          h('div', { className: "absolute inset-0 opacity-20 brightness-100 contrast-150", style: { backgroundImage: "url('https://grainy-gradients.vercel.app/noise.svg')" } })
+        );
+      };
+
+      const GlassButton = ({ children, variant = 'primary', className = '', icon, ...props }) => {
+        const baseStyles = "glass-button px-6 py-3 rounded-xl font-medium flex items-center justify-center gap-2 transform transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed";
+        
+        let variantStyles = "";
+        if (variant === 'primary') {
+          variantStyles = "text-white bg-white/10 hover:bg-white/20 border-white/20";
+        } else if (variant === 'danger') {
+          variantStyles = "text-red-100 bg-red-500/20 hover:bg-red-500/30 border-red-500/30 shadow-[0_0_15px_rgba(239,68,68,0.3)]";
+        } else if (variant === 'secondary') {
+          variantStyles = "text-slate-300 bg-black/20 hover:bg-black/40 border-white/5";
+        }
+
+        return h('button', { className: `${baseStyles} ${variantStyles} ${className}`, ...props },
+          icon && h('span', { className: "w-5 h-5" }, icon),
+          children
+        );
+      };
+
+      const RecorderView = ({ isRecording, onStartRecording, onStopRecording, recordingDuration }) => {
+        const [withAudio, setWithAudio] = useState(true);
+        const [audioDevices, setAudioDevices] = useState([]);
+        const [selectedAudioId, setSelectedAudioId] = useState('');
+        const [permissionGranted, setPermissionGranted] = useState(false);
+
+        const getDevices = async () => {
+          let tempStream = null;
+          try {
+            tempStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            setPermissionGranted(true);
+            
+            const devices = await navigator.mediaDevices.enumerateDevices();
+            const mics = devices
+              .filter(device => device.kind === 'audioinput')
+              .map(device => ({
+                deviceId: device.deviceId,
+                label: device.label || `Microfono ${device.deviceId.slice(0, 5)}`
+              }));
+            
+            const uniqueMics = Array.from(new Map(mics.map(m => [m.deviceId, m])).values());
+            setAudioDevices(uniqueMics);
+            
+            if (uniqueMics.length > 0) {
+                setSelectedAudioId(prev => {
+                    const stillExists = uniqueMics.find(d => d.deviceId === prev);
+                    if (stillExists) return prev;
+                    const defaultDevice = uniqueMics.find(d => d.deviceId === 'default');
+                    return defaultDevice ? defaultDevice.deviceId : uniqueMics[0].deviceId;
+                });
+            }
+          } catch (error) {
+            console.error("Error enumerating audio devices:", error);
+            setPermissionGranted(false);
+          } finally {
+            if (tempStream) {
+              tempStream.getTracks().forEach(track => track.stop());
+            }
+          }
+        };
+
+        useEffect(() => {
+          getDevices();
+          navigator.mediaDevices.addEventListener('devicechange', getDevices);
+          return () => navigator.mediaDevices.removeEventListener('devicechange', getDevices);
+        }, []);
+
+        const formatTime = (seconds) => {
+          const mins = Math.floor(seconds / 60);
+          const secs = seconds % 60;
+          return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+        };
+
+        return h('div', { className: "flex flex-col items-center justify-center h-full w-full max-w-2xl mx-auto p-6 relative" },
+          h('div', { className: "glass-panel p-10 rounded-3xl w-full flex flex-col items-center gap-8 relative overflow-visible z-10 animate-slide-up hover:shadow-[0_20px_40px_rgba(0,0,0,0.4)] transition-shadow duration-500" },
+            h('div', { className: "text-center z-10 animate-float" },
+              h('div', { className: "inline-flex items-center justify-center p-5 rounded-2xl bg-gradient-to-tr from-cyan-500/20 to-indigo-500/20 mb-6 shadow-lg shadow-indigo-500/10 ring-1 ring-white/10 backdrop-blur-md" },
+                h(Zap, { className: "w-10 h-10 text-cyan-400 drop-shadow-[0_0_10px_rgba(34,211,238,0.5)]" })
+              ),
+              h('h1', { className: "text-5xl font-bold mb-3 bg-clip-text text-transparent bg-gradient-to-r from-cyan-300 via-indigo-300 to-purple-300" }, 
+                'Flux Recorder'
+              ),
+              h('p', { className: "text-slate-400 text-lg" },
+                'Cattura fluida a ',
+                h('span', { className: "text-cyan-400 font-semibold" }, '60 FPS')
+              )
+            ),
+            isRecording && h('div', { className: "flex items-center gap-4 px-8 py-4 rounded-full bg-red-500/10 border border-red-500/20 animate-scale-in" },
+              h('div', { className: "w-3 h-3 rounded-full bg-red-500 animate-pulse shadow-[0_0_10px_rgba(239,68,68,0.5)]" }),
+              h('span', { className: "font-mono text-3xl font-bold text-red-100 tracking-wider" }, formatTime(recordingDuration))
+            ),
+            h('div', { className: "flex flex-col gap-5 w-full max-w-sm z-10" },
+              !isRecording ? [
+                h('div', { key: 'mic', className: "flex flex-col gap-2 p-1 rounded-2xl bg-black/20 border border-white/5 transition-all duration-300 hover:bg-black/30" },
+                  h('div', { 
+                    className: "flex items-center justify-between p-3 cursor-pointer rounded-xl hover:bg-white/5 transition-colors",
+                    onClick: () => setWithAudio(!withAudio)
+                  },
+                    h('div', { className: "flex items-center gap-4" },
+                      h('div', { className: `p-3 rounded-xl transition-all duration-300 ${withAudio ? 'bg-cyan-500/20 text-cyan-300 shadow-[0_0_15px_rgba(6,182,212,0.15)]' : 'bg-slate-700/30 text-slate-500'}` },
+                        withAudio ? h(Mic, { size: 22 }) : h(MicOff, { size: 22 })
+                      ),
+                      h('div', { className: "flex flex-col text-left" },
+                        h('span', { className: "text-base font-semibold text-slate-200" }, 'Microfono'),
+                        h('span', { className: "text-xs text-slate-500 font-medium tracking-wide" }, withAudio ? 'ATTIVO' : 'DISATTIVATO')
+                      )
+                    ),
+                    h('div', { className: `w-12 h-7 rounded-full p-1 transition-all duration-300 ${withAudio ? 'bg-gradient-to-r from-cyan-500 to-indigo-500' : 'bg-slate-700'}` },
+                      h('div', { className: `w-5 h-5 rounded-full bg-white shadow-lg transform transition-transform duration-300 ${withAudio ? 'translate-x-5' : 'translate-x-0'}` })
+                    )
+                  ),
+                  withAudio && h('div', { className: "px-4 pb-4 animate-fade-in" },
+                    h('div', { className: "h-px w-full bg-gradient-to-r from-transparent via-white/10 to-transparent mb-3" }),
+                    h('label', { className: "flex items-center justify-between text-[10px] uppercase font-bold text-indigo-300/70 mb-2 pl-1 tracking-widest" },
+                      h('span', null, 'Sorgente Input'),
+                      h('button', { 
+                        onClick: (e) => { e.stopPropagation(); getDevices(); }, 
+                        className: "hover:text-cyan-400 transition-colors",
+                        title: "Aggiorna lista"
+                      }, h(RefreshCw, { size: 12 }))
+                    ),
+                    audioDevices.length > 0 ? h('div', { className: "relative group" },
+                      h('div', { className: "absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-cyan-400" },
+                        h(Check, { size: 16 })
+                      ),
+                      h('select', {
+                        value: selectedAudioId,
+                        onChange: (e) => setSelectedAudioId(e.target.value),
+                        className: "w-full bg-black/40 text-sm font-medium text-slate-200 rounded-xl pl-10 pr-10 py-3 appearance-none border border-white/10 focus:border-cyan-500/50 outline-none hover:bg-black/60 transition-all cursor-pointer shadow-inner"
+                      },
+                        audioDevices.map(device => 
+                          h('option', { key: device.deviceId, value: device.deviceId }, device.label)
+                        )
+                      ),
+                      h(ChevronDown, { className: "absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none group-hover:text-cyan-400 transition-colors", size: 16 })
+                    ) : h('div', { className: "text-xs text-yellow-500/80 px-2 py-2 bg-yellow-500/10 rounded-lg border border-yellow-500/20" },
+                      permissionGranted ? "Nessun microfono rilevato." : "Permesso richiesto."
+                    )
+                  )
+                ),
+                h(GlassButton, {
+                  key: 'start',
+                  onClick: () => onStartRecording(withAudio, withAudio ? selectedAudioId : undefined),
+                  className: "w-full !py-5 text-xl group bg-gradient-to-r from-indigo-600 to-cyan-600 border-none shadow-[0_0_30px_rgba(79,70,229,0.3)] hover:shadow-[0_0_50px_rgba(34,211,238,0.4)] mt-2 overflow-hidden relative transition-all duration-300 hover:scale-[1.02]"
+                },
+                  h('div', { className: "absolute inset-0 w-[200%] h-full bg-gradient-to-r from-transparent via-white/25 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-700 ease-in-out -skew-x-12" }),
+                  h('div', { className: "bg-white text-indigo-600 rounded-full p-1.5 mr-3 transition-transform duration-500 group-hover:rotate-180 shadow-sm relative z-10" },
+                    h(Circle, { size: 14, fill: "currentColor" })
+                  ),
+                  h('span', { className: "relative z-10 font-bold tracking-wide" }, 'Inizia Registrazione')
+                )
+              ] : h(GlassButton, {
+                variant: "danger",
+                onClick: onStopRecording,
+                className: "w-full !py-5 text-xl relative overflow-hidden group flex items-center justify-center gap-3"
+              },
+                h('div', { className: "flex-shrink-0" },
+                  h(StopCircle, { size: 24, fill: "currentColor", className: "text-red-100" })
+                ),
+                h('span', { className: "font-bold tracking-wide text-red-100 translate-y-[1px]" }, 'Termina Registrazione'),
+                h('div', { className: "absolute inset-0 bg-red-400/10 animate-pulse pointer-events-none" })
+              )
+            ),
+            !isRecording && h('div', { className: "absolute -bottom-20 -right-20 w-80 h-80 bg-cyan-500/20 rounded-full blur-[100px] pointer-events-none animate-blob" }),
+            !isRecording && h('div', { className: "absolute -top-20 -left-20 w-80 h-80 bg-indigo-500/20 rounded-full blur-[100px] pointer-events-none animate-blob" })
+          ),
+          !isRecording && h('p', { className: "mt-8 text-slate-500 text-sm flex items-center gap-2 animate-fade-in opacity-70" },
+            h(Settings2, { size: 14 }),
+            h('span', null, 
+              'Configurazione ottimizzata per ',
+              h('span', { className: "text-slate-300 font-medium" }, '60 FPS'),
+              ' e alta fedeltà audio.'
+            )
+          )
+        );
+      };
+
+      const PreviewView = ({ session, onDiscard }) => {
+        const [fileName, setFileName] = useState(session.name);
+        const [isPlaying, setIsPlaying] = useState(false);
+        const [isMuted, setIsMuted] = useState(false);
+        const [currentTime, setCurrentTime] = useState(0);
+        const [duration, setDuration] = useState(0);
+        
+        const videoRef = useRef(null);
+        const progressBarRef = useRef(null);
+
+        const fileExtension = session.mimeType.includes('mp4') ? 'mp4' : 'webm';
+
+        useEffect(() => {
+          let isMounted = true;
+          const videoEl = videoRef.current;
+
+          const playVideo = async () => {
+              if (videoEl) {
+                  try {
+                      if (isMounted) setIsPlaying(false);
+                      await videoEl.play();
+                      if (isMounted) setIsPlaying(true);
+                  } catch (e) {
+                      if (isMounted && e.name !== 'AbortError') {
+                          setIsPlaying(false);
+                      }
+                  }
+              }
+          };
+
+          playVideo();
+
+          return () => {
+              isMounted = false;
+              if (videoEl) videoEl.pause();
+          };
+        }, [session.url]);
+
+        const handleTimeUpdate = () => {
+          if (videoRef.current) {
+            setCurrentTime(videoRef.current.currentTime);
+            const vidDuration = videoRef.current.duration;
+            if (Number.isFinite(vidDuration)) {
+              setDuration(vidDuration);
+            }
+          }
+        };
+
+        const togglePlay = async () => {
+          if (videoRef.current) {
+            try {
+              if (isPlaying) {
+                videoRef.current.pause();
+                setIsPlaying(false);
+              } else {
+                await videoRef.current.play();
+                setIsPlaying(true);
+              }
+            } catch (e) {
+              setIsPlaying(false);
+            }
+          }
+        };
+
+        const handleDownload = () => {
+          const a = document.createElement('a');
+          a.style.display = 'none';
+          a.href = session.url;
+          a.download = `${fileName}.${fileExtension}`;
+          document.body.appendChild(a);
+          a.click();
+          setTimeout(() => document.body.removeChild(a), 100);
+        };
+
+        const handleProgressBarClick = (e) => {
+          if (progressBarRef.current && videoRef.current) {
+              const durationVal = videoRef.current.duration;
+              if (!Number.isFinite(durationVal) || durationVal <= 0) return;
+
+              const rect = progressBarRef.current.getBoundingClientRect();
+              const pos = (e.clientX - rect.left) / rect.width;
+              const clampedPos = Math.max(0, Math.min(1, pos));
+              const newTime = clampedPos * durationVal;
+              
+              if (Number.isFinite(newTime)) {
+                  videoRef.current.currentTime = newTime;
+                  setCurrentTime(newTime);
+              }
+          }
+        };
+
+        const formatTime = (time) => {
+          if (!Number.isFinite(time) || isNaN(time)) return "0:00";
+          const mins = Math.floor(time / 60);
+          const secs = Math.floor(time % 60);
+          return `${mins}:${secs.toString().padStart(2, '0')}`;
+        };
+
+        const progressPercent = (duration > 0 && Number.isFinite(currentTime)) ? (currentTime / duration) * 100 : 0;
+
+        return h('div', { className: "flex flex-col items-center justify-center min-h-screen w-full p-4 md:p-8 animate-slide-up" },
+          h('div', { className: "glass-panel p-1 rounded-3xl w-full max-w-5xl flex flex-col md:flex-row gap-6 overflow-hidden relative shadow-2xl bg-black/40" },
+            h('div', { className: "flex-1 relative group bg-black rounded-2xl overflow-hidden aspect-video md:aspect-auto" },
+              h('video', {
+                ref: videoRef,
+                src: session.url,
+                className: "w-full h-full object-contain",
+                playsInline: true,
+                preload: "metadata",
+                onTimeUpdate: handleTimeUpdate,
+                onEnded: () => setIsPlaying(false),
+                onLoadedMetadata: (e) => {
+                    const d = e.currentTarget.duration;
+                    if(Number.isFinite(d)) setDuration(d);
+                }
+              }),
+              h('div', { className: "absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/80 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" },
+                h('div', {
+                  ref: progressBarRef,
+                  className: "w-full h-1.5 bg-white/20 rounded-full mb-4 cursor-pointer hover:h-2 transition-all",
+                  onClick: handleProgressBarClick
+                },
+                  h('div', { className: "h-full bg-cyan-500 rounded-full relative", style: { width: `${progressPercent}%` } },
+                    h('div', { className: "absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full shadow-md scale-0 group-hover:scale-100 transition-transform" })
+                  )
+                ),
+                h('div', { className: "flex items-center justify-between" },
+                  h('div', { className: "flex items-center gap-4" },
+                    h('button', { onClick: togglePlay, className: "text-white hover:text-cyan-400 transition-colors" },
+                      isPlaying ? h(Pause, { size: 24, fill: "currentColor" }) : h(Play, { size: 24, fill: "currentColor" })
+                    ),
+                    h('div', { className: "flex items-center gap-2" },
+                      h('button', {
+                        onClick: () => {
+                            if(videoRef.current) {
+                                videoRef.current.muted = !isMuted;
+                                setIsMuted(!isMuted);
+                            }
+                        },
+                        className: "text-white hover:text-cyan-400"
+                      }, isMuted ? h(VolumeX, { size: 20 }) : h(Volume2, { size: 20 }))
+                    ),
+                    h('span', { className: "text-sm font-mono text-slate-300" }, `${formatTime(currentTime)} / ${formatTime(duration)}`)
+                  ),
+                  h('button', {
+                    onClick: () => {
+                        if (videoRef.current) {
+                            if (document.fullscreenElement) {
+                                document.exitFullscreen();
+                            } else {
+                                videoRef.current.requestFullscreen();
+                            }
+                        }
+                    },
+                    className: "text-white hover:text-cyan-400"
+                  }, h(Maximize, { size: 20 }))
+                )
+              ),
+              !isPlaying && h('div', {
+                className: "absolute inset-0 flex items-center justify-center cursor-pointer bg-black/10 hover:bg-black/20 transition-colors",
+                onClick: togglePlay
+              },
+                h('div', { className: "w-16 h-16 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 flex items-center justify-center pl-1 group-hover:scale-110 transition-transform duration-300" },
+                  h(Play, { size: 32, fill: "white", className: "text-white opacity-90" })
+                )
+              )
+            ),
+            h('div', { className: "w-full md:w-80 flex flex-col gap-6 p-6 bg-white/5 md:border-l border-white/10" },
+              h('div', null,
+                h('h2', { className: "text-2xl font-bold text-white mb-1" }, 'Anteprima'),
+                h('p', { className: "text-slate-400 text-sm" }, 'Rivedi, rinomina ed esporta.')
+              ),
+              h('div', { className: "flex flex-col gap-2" },
+                h('label', { className: "text-xs text-slate-400 font-medium ml-1" }, 'NOME FILE'),
+                h('div', { className: "flex items-center gap-2 bg-black/20 border border-white/10 rounded-xl px-4 py-3 focus-within:border-cyan-500/50 transition-colors" },
+                  h('input', {
+                    type: "text",
+                    value: fileName,
+                    onChange: (e) => setFileName(e.target.value),
+                    className: "bg-transparent border-none outline-none text-white w-full placeholder-slate-600",
+                    placeholder: "Nome della registrazione"
+                  }),
+                  h('span', { className: "text-slate-600 text-sm select-none" }, `.${fileExtension}`)
+                )
+              ),
+              h('div', { className: "flex-1" }),
+              h('div', { className: "flex flex-col gap-3" },
+                h(GlassButton, {
+                  onClick: handleDownload,
+                  className: "w-full bg-cyan-600/20 hover:bg-cyan-600/40 border-cyan-500/30 text-cyan-100",
+                  icon: h(Download, { size: 18 })
+                }, 'Esporta Video'),
+                h(GlassButton, {
+                  variant: "secondary",
+                  onClick: onDiscard,
+                  className: "w-full",
+                  icon: h(RefreshCw, { size: 18 })
+                }, 'Nuova Registrazione')
+              )
+            )
+          )
+        );
+      };
+
+      const App = () => {
+        const [appState, setAppState] = useState(AppState.IDLE);
+        const [isRecording, setIsRecording] = useState(false);
+        const [recordingDuration, setRecordingDuration] = useState(0);
+        const [currentSession, setCurrentSession] = useState(null);
+
+        const mediaRecorderRef = useRef(null);
+        const chunksRef = useRef([]);
+        const timerRef = useRef(null);
+        const streamRef = useRef(null);
+        const audioContextRef = useRef(null);
+        const activeMimeTypeRef = useRef('video/webm');
+
+        useEffect(() => {
+          return () => {
+            if (timerRef.current) clearInterval(timerRef.current);
+            if (streamRef.current) streamRef.current.getTracks().forEach(track => track.stop());
+            if (audioContextRef.current) audioContextRef.current.close();
+          };
+        }, []);
+
+        const getSupportedMimeType = () => {
+          const types = ['video/webm;codecs=vp8,opus', 'video/webm;codecs=vp9,opus', 'video/webm'];
+          for (const type of types) {
+            if (MediaRecorder.isTypeSupported(type)) {
+              console.log(`Using MIME type: ${type}`);
+              return type;
+            }
+          }
+          return 'video/webm';
+        };
+
+        const startRecording = async (withAudio, audioDeviceId) => {
+          try {
+            const displayStream = await navigator.mediaDevices.getDisplayMedia({
+              video: { displaySurface: "monitor", frameRate: { ideal: 60, max: 60 }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+              audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 2 }
+            });
+
+            const videoTrack = displayStream.getVideoTracks()[0];
+            const settings = videoTrack.getSettings();
+            console.log(`Capture: ${settings.width}x${settings.height} @ ${settings.frameRate}fps`);
+
+            let finalAudioTracks = [];
+            const hasSystemAudio = displayStream.getAudioTracks().length > 0;
+            
+            if (withAudio || hasSystemAudio) {
+               const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+               const audioCtx = new AudioContextClass();
+               audioContextRef.current = audioCtx;
+               if (audioCtx.state === 'suspended') await audioCtx.resume();
+
+               const dest = audioCtx.createMediaStreamDestination();
+               
+               if (hasSystemAudio) {
+                  const sysTrack = displayStream.getAudioTracks()[0];
+                  const sysSource = audioCtx.createMediaStreamSource(new MediaStream([sysTrack]));
+                  const sysGain = audioCtx.createGain();
+                  sysGain.gain.value = 1.0; 
+                  sysSource.connect(sysGain).connect(dest);
+               }
+
+               if (withAudio) {
+                  try {
+                      const micConstraints = {
+                          deviceId: audioDeviceId ? { exact: audioDeviceId } : undefined,
+                          echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 2
+                      };
+                      let micStream;
+                      try {
+                          micStream = await navigator.mediaDevices.getUserMedia({ audio: micConstraints });
+                      } catch (err) {
+                          micStream = await navigator.mediaDevices.getUserMedia({ audio: { ...micConstraints, deviceId: undefined } });
+                      }
+                      const micTrack = micStream.getAudioTracks()[0];
+                      const micSource = audioCtx.createMediaStreamSource(new MediaStream([micTrack]));
+                      const micGain = audioCtx.createGain();
+                      micGain.gain.value = 1.0;
+                      micSource.connect(micGain).connect(dest);
+                  } catch (micErr) {
+                      console.error("Microphone failed:", micErr);
+                  }
+               }
+               finalAudioTracks = dest.stream.getAudioTracks();
+            }
+
+            const finalStream = new MediaStream([videoTrack, ...finalAudioTracks]);
+            streamRef.current = finalStream;
+            videoTrack.onended = () => stopRecording();
+
+            const mimeType = getSupportedMimeType();
+            activeMimeTypeRef.current = mimeType;
+            const options = { mimeType, videoBitsPerSecond: 6000000, ignoreMutedMedia: true };
+            const mediaRecorder = new MediaRecorder(finalStream, options);
+            mediaRecorderRef.current = mediaRecorder;
+            chunksRef.current = [];
+
+            mediaRecorder.ondataavailable = (event) => {
+              if (event.data.size > 0) chunksRef.current.push(event.data);
+            };
+            mediaRecorder.onerror = () => stopRecording();
+            mediaRecorder.onstop = () => {
+              const mime = activeMimeTypeRef.current;
+              const blob = new Blob(chunksRef.current, { type: mime });
+              const url = URL.createObjectURL(blob);
+              
+              setCurrentSession({
+                blob, url, timestamp: Date.now(), duration: recordingDuration,
+                name: `Flux_Record_${new Date().toLocaleDateString().replace(/\//g, '-')}`,
+                mimeType: mime
+              });
+              
+              if (streamRef.current) streamRef.current.getTracks().forEach(track => track.stop());
+              if (audioContextRef.current) { audioContextRef.current.close(); audioContextRef.current = null; }
+              setAppState(AppState.PREVIEW);
+              setIsRecording(false);
+              if (timerRef.current) clearInterval(timerRef.current);
+            };
+
+            mediaRecorder.start(1000);
+            setIsRecording(true);
+            setAppState(AppState.RECORDING);
+            setRecordingDuration(0);
+            timerRef.current = window.setInterval(() => setRecordingDuration(prev => prev + 1), 1000);
+          } catch (error) {
+            console.error("Recording error:", error);
+            setAppState(AppState.IDLE);
+          }
+        };
+
+        const stopRecording = () => {
+          if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+            try { mediaRecorderRef.current.stop(); } catch (e) {}
+          }
+        };
+
+        const handleDiscard = () => {
+          if (currentSession) URL.revokeObjectURL(currentSession.url);
+          setCurrentSession(null);
+          setAppState(AppState.IDLE);
+          setRecordingDuration(0);
+        };
+
+        return h('div', { className: "relative min-h-screen text-white font-sans selection:bg-cyan-500/30" },
+          h(Background),
+          h('main', { className: "relative z-10 flex flex-col min-h-screen" },
+            h('nav', { className: "w-full p-6 flex justify-between items-center animate-fade-in" },
+              h('div', { className: "flex items-center gap-2 group cursor-default" },
+                h('div', { className: "w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-400 to-indigo-600 flex items-center justify-center shadow-lg shadow-indigo-500/20 group-hover:shadow-indigo-500/40 transition-shadow duration-500" },
+                  h('div', { className: "w-4 h-4 bg-white rounded-full animate-pulse-slow" })
+                ),
+                h('span', { className: "font-bold text-2xl tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white to-slate-400 group-hover:to-white transition-all duration-500" }, 'Flux')
+              ),
+              h('div', { className: "flex items-center gap-4" },
+                h('div', { className: `px-4 py-1.5 rounded-full text-xs font-bold tracking-wider border transition-all duration-300 ${appState === AppState.RECORDING ? 'bg-red-500/20 border-red-500/30 text-red-200 shadow-[0_0_15px_rgba(239,68,68,0.2)]' : 'bg-white/5 border-white/10 text-slate-400'}` },
+                  appState === AppState.RECORDING ? 'REC ●' : 'READY'
+                )
+              )
+            ),
+            h('div', { className: "flex-1 flex items-center justify-center p-4" },
+              appState === AppState.IDLE && h(RecorderView, { isRecording: false, onStartRecording: startRecording, onStopRecording: stopRecording, recordingDuration }),
+              appState === AppState.RECORDING && h(RecorderView, { isRecording: true, onStartRecording: startRecording, onStopRecording: stopRecording, recordingDuration }),
+              appState === AppState.PREVIEW && currentSession && h(PreviewView, { session: currentSession, onDiscard: handleDiscard })
+            )
+          )
+        );
+      };
+
+      const root = ReactDOM.createRoot(document.getElementById('root'));
+      root.render(h(React.StrictMode, null, h(App)));
+    </script>
+</body>
+</html>

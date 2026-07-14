@@ -1,0 +1,950 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>✋ Hand Track 3D</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;700;800&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #050810;
+    --accent: #00ffe5;
+    --accent2: #ff4ded;
+    --accent3: #ffe040;
+    --glass: rgba(255,255,255,0.04);
+    --border: rgba(0,255,229,0.18);
+    --text: #e8eaf0;
+    --mono: 'Space Mono', monospace;
+    --sans: 'Syne', sans-serif;
+  }
+
+  html, body {
+    width: 100%; height: 100%;
+    overflow: hidden;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--mono);
+  }
+
+  /* ── VIDEO (hidden, used only for MediaPipe) ── */
+  #video {
+    position: fixed;
+    top: 0; left: 0;
+    width: 640px; height: 480px;
+    opacity: 0; pointer-events: none;
+    transform: scaleX(-1);
+  }
+
+  /* ── THREE.JS CANVAS (full-screen) ── */
+  #three-canvas {
+    position: fixed;
+    inset: 0;
+    z-index: 1;
+  }
+
+  /* ── DEBUG CANVAS (landmarks overlay, small corner) ── */
+  #debug-canvas {
+    position: fixed;
+    bottom: 20px; right: 20px;
+    width: 200px; height: 150px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    z-index: 20;
+    opacity: 0.75;
+    transform: scaleX(-1);
+    display: none;
+    background: rgba(0,0,0,0.4);
+  }
+
+  /* ── HUD ── */
+  #hud {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    z-index: 30;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    padding: 18px 24px 0;
+    pointer-events: none;
+  }
+
+  #logo {
+    font-family: var(--sans);
+    font-size: 1.35rem;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    color: var(--accent);
+    text-shadow: 0 0 18px var(--accent);
+    pointer-events: none;
+  }
+  #logo span { color: var(--accent2); }
+
+  /* ── STATUS BADGE ── */
+  #status-wrap {
+    position: fixed;
+    top: 18px; left: 50%; transform: translateX(-50%);
+    z-index: 30;
+    pointer-events: none;
+  }
+
+  #status {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    background: var(--glass);
+    border: 1px solid var(--border);
+    backdrop-filter: blur(12px);
+    padding: 6px 18px;
+    border-radius: 100px;
+    color: var(--accent);
+    transition: color 0.3s, border-color 0.3s, box-shadow 0.3s;
+    white-space: nowrap;
+  }
+  #status.grab  { color: var(--accent3); border-color: rgba(255,224,64,0.4); box-shadow: 0 0 18px rgba(255,224,64,0.2); }
+  #status.scale { color: var(--accent2); border-color: rgba(255,77,237,0.4); box-shadow: 0 0 18px rgba(255,77,237,0.2); }
+  #status.rotate { color: #adf; border-color: rgba(120,200,255,0.4); box-shadow: 0 0 18px rgba(120,200,255,0.15); }
+
+  /* ── CONTROLS PANEL ── */
+  #controls {
+    position: fixed;
+    bottom: 24px; left: 24px;
+    z-index: 30;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .btn {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 9px 20px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--glass);
+    color: var(--accent);
+    cursor: pointer;
+    backdrop-filter: blur(10px);
+    transition: background 0.2s, box-shadow 0.2s, color 0.2s;
+    pointer-events: all;
+  }
+  .btn:hover { background: rgba(0,255,229,0.10); box-shadow: 0 0 14px rgba(0,255,229,0.2); }
+  .btn:active { transform: scale(0.97); }
+  .btn.active { background: rgba(0,255,229,0.15); border-color: var(--accent); box-shadow: 0 0 20px rgba(0,255,229,0.25); }
+  .btn.danger { color: var(--accent2); border-color: rgba(255,77,237,0.3); }
+  .btn.danger:hover { background: rgba(255,77,237,0.10); box-shadow: 0 0 14px rgba(255,77,237,0.2); }
+
+  /* ── LEGEND ── */
+  #legend {
+    position: fixed;
+    top: 64px; right: 24px;
+    z-index: 30;
+    font-size: 0.62rem;
+    letter-spacing: 0.08em;
+    line-height: 1.9;
+    background: var(--glass);
+    border: 1px solid var(--border);
+    backdrop-filter: blur(10px);
+    padding: 12px 16px;
+    border-radius: 10px;
+    color: rgba(232,234,240,0.6);
+    pointer-events: none;
+  }
+  #legend b { color: var(--accent); }
+  #legend .r { color: var(--accent3); }
+  #legend .l { color: var(--accent2); }
+
+  /* ── SPLASH ── */
+  #splash {
+    position: fixed; inset: 0;
+    z-index: 100;
+    background: var(--bg);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 24px;
+    transition: opacity 0.8s;
+  }
+  #splash.hide { opacity: 0; pointer-events: none; }
+  #splash h1 {
+    font-family: var(--sans);
+    font-size: clamp(2rem, 6vw, 4rem);
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    color: var(--accent);
+    text-shadow: 0 0 40px var(--accent);
+    text-align: center;
+  }
+  #splash h1 span { color: var(--accent2); }
+  #splash p {
+    font-size: 0.8rem;
+    letter-spacing: 0.1em;
+    color: rgba(232,234,240,0.5);
+    text-align: center;
+    max-width: 360px;
+    line-height: 1.8;
+  }
+  #splash-btn {
+    font-family: var(--mono);
+    font-size: 0.8rem;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    padding: 14px 36px;
+    border-radius: 8px;
+    border: 1px solid var(--accent);
+    background: transparent;
+    color: var(--accent);
+    cursor: pointer;
+    transition: all 0.2s;
+    box-shadow: 0 0 20px rgba(0,255,229,0.15), inset 0 0 20px rgba(0,255,229,0.05);
+  }
+  #splash-btn:hover {
+    background: rgba(0,255,229,0.1);
+    box-shadow: 0 0 40px rgba(0,255,229,0.3), inset 0 0 20px rgba(0,255,229,0.08);
+  }
+
+  /* ── SCANLINE OVERLAY ── */
+  body::after {
+    content: '';
+    position: fixed; inset: 0;
+    z-index: 200;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,0,0,0.03) 2px,
+      rgba(0,0,0,0.03) 4px
+    );
+    pointer-events: none;
+  }
+
+  /* ── LOADER ── */
+  #loader {
+    position: fixed; inset: 0;
+    z-index: 90;
+    background: var(--bg);
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 16px;
+    display: none;
+  }
+  #loader.show { display: flex; }
+  #loader-bar-wrap {
+    width: 220px; height: 3px;
+    background: rgba(255,255,255,0.07);
+    border-radius: 99px; overflow: hidden;
+  }
+  #loader-bar {
+    height: 100%; width: 0%;
+    background: var(--accent);
+    box-shadow: 0 0 12px var(--accent);
+    border-radius: 99px;
+    transition: width 0.3s;
+  }
+  #loader p { font-size: 0.65rem; letter-spacing: 0.14em; color: rgba(232,234,240,0.4); }
+
+  /* ── PINCH INDICATORS ── */
+  .pinch-dot {
+    position: fixed;
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    pointer-events: none;
+    z-index: 40;
+    transition: opacity 0.15s;
+    opacity: 0;
+  }
+  #pinch-right { background: radial-gradient(circle, var(--accent3), transparent 70%); box-shadow: 0 0 14px var(--accent3); }
+  #pinch-left  { background: radial-gradient(circle, var(--accent2), transparent 70%); box-shadow: 0 0 14px var(--accent2); }
+</style>
+</head>
+<body>
+
+<!-- SPLASH SCREEN -->
+<div id="splash">
+  <h1>Hand<span>Track</span> 3D</h1>
+  <p>Manipola oggetti 3D in tempo reale usando solo le tue mani — nessun controller necessario.</p>
+  <button id="splash-btn">▶ Avvia Webcam</button>
+</div>
+
+<!-- LOADER -->
+<div id="loader">
+  <div id="loader-bar-wrap"><div id="loader-bar"></div></div>
+  <p id="loader-text">INIZIALIZZAZIONE MEDIAPIPE...</p>
+</div>
+
+<!-- VIDEO (hidden, MediaPipe input) -->
+<video id="video" autoplay playsinline></video>
+
+<!-- THREE.JS CANVAS -->
+<canvas id="three-canvas"></canvas>
+
+<!-- DEBUG LANDMARKS CANVAS -->
+<canvas id="debug-canvas" width="200" height="150"></canvas>
+
+<!-- HUD -->
+<div id="hud">
+  <div id="logo">hand<span>track</span>.3d</div>
+</div>
+
+<div id="status-wrap">
+  <div id="status">In attesa delle mani...</div>
+</div>
+
+<!-- CONTROLS -->
+<div id="controls">
+  <button class="btn danger" id="btn-stop">⏹ Ferma Webcam</button>
+  <button class="btn" id="btn-debug">⬛ Debug Landmarks</button>
+  <button class="btn" id="btn-reset">↺ Reset Oggetto</button>
+  <button class="btn" id="btn-shape">◈ Cambia Forma</button>
+</div>
+
+<!-- LEGEND -->
+<div id="legend">
+  <b>COME USARE</b><br>
+  <span class="r">Mano Destra aperta</span> sopra obj → trascina<br>
+  <span class="r">Mano Destra pinch</span> sopra obj → ruota<br>
+  <span class="l">Mano Sinistra aperta</span> → ruota asse Z<br>
+  <span class="l">Mano Sinistra pinch</span> + distanza → scala<br>
+</div>
+
+<!-- PINCH DOTS -->
+<div class="pinch-dot" id="pinch-right"></div>
+<div class="pinch-dot" id="pinch-left"></div>
+
+<!-- ─────────────────────────────────────────────────────
+     SCRIPT PRINCIPALE
+     ───────────────────────────────────────────────────── -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+
+/* ══════════════════════════════════════════════════════
+   1. COSTANTI E CONFIGURAZIONE
+   ══════════════════════════════════════════════════════ */
+const PINCH_THRESHOLD   = 0.07;  // distanza normalizzata per pinch (pollice+indice)
+const HOVER_RADIUS      = 0.38;  // raggio hover: quanto deve essere vicina la mano all'oggetto
+const DEPTH_SCALE       = 0.5;   // quanto la Z varia con la profondità della mano
+const SMOOTH_DRAG       = 0.40;  // EMA smoothing per drag (alto = reattivo)
+const SMOOTH_IDLE       = 0.25;  // EMA smoothing quando non si trascina
+
+/* ══════════════════════════════════════════════════════
+   2. STATO GLOBALE
+   ══════════════════════════════════════════════════════ */
+const state = {
+  running: false,
+
+  // Mano destra
+  rightHovering: false,   // dito sopra l'oggetto
+  rightPinching: false,   // pollice+indice chiusi
+  isDragging: false,      // sta trascinando l'oggetto
+
+  // Mano sinistra
+  leftPinching: false,
+  isScaling: false,
+
+  grabOffset: new THREE.Vector3(),
+  prevRightPos: null,     // per rotazione con mano destra aperta sopra oggetto
+  prevLeftPos: null,
+  prevTwoHandDist: null,
+  objectScale: 1.0,
+  shapeIndex: 0,
+};
+
+/* ══════════════════════════════════════════════════════
+   3. THREE.JS — SCENA, RENDERER, CAMERA
+   ══════════════════════════════════════════════════════ */
+const canvas = document.getElementById('three-canvas');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.2;
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.01, 100);
+camera.position.set(0, 0, 2.5);
+
+/* ── RESIZE ── */
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+/* ── LUCI ── */
+const ambientLight = new THREE.AmbientLight(0x334466, 0.8);
+scene.add(ambientLight);
+
+const dirLight = new THREE.DirectionalLight(0x00ffe5, 2.5);
+dirLight.position.set(2, 4, 3);
+dirLight.castShadow = true;
+scene.add(dirLight);
+
+const fillLight = new THREE.DirectionalLight(0xff4ded, 1.2);
+fillLight.position.set(-3, -1, 2);
+scene.add(fillLight);
+
+const rimLight = new THREE.PointLight(0xffe040, 1.5, 8);
+rimLight.position.set(0, 3, -2);
+scene.add(rimLight);
+
+/* ── SFONDO PARTICELLE ── */
+const particleGeo = new THREE.BufferGeometry();
+const pCount = 600;
+const pPos = new Float32Array(pCount * 3);
+for (let i = 0; i < pCount * 3; i++) pPos[i] = (Math.random() - 0.5) * 8;
+particleGeo.setAttribute('position', new THREE.BufferAttribute(pPos, 3));
+const particleMat = new THREE.PointsMaterial({ color: 0x334466, size: 0.012, transparent: true, opacity: 0.6 });
+scene.add(new THREE.Points(particleGeo, particleMat));
+
+/* ── OGGETTI 3D ── */
+const shapes = [
+  () => new THREE.BoxGeometry(0.38, 0.38, 0.38),
+  () => new THREE.SphereGeometry(0.22, 40, 40),
+  () => new THREE.TorusKnotGeometry(0.16, 0.055, 128, 16),
+  () => new THREE.IcosahedronGeometry(0.22, 1),
+  () => new THREE.OctahedronGeometry(0.24),
+];
+
+const objMat = new THREE.MeshStandardMaterial({
+  color: 0x00ffe5,
+  metalness: 0.45,
+  roughness: 0.22,
+  emissive: 0x003344,
+  emissiveIntensity: 0.4,
+});
+
+let mainObj = null;
+
+function buildObject(idx) {
+  if (mainObj) scene.remove(mainObj);
+  const geo = shapes[idx % shapes.length]();
+  mainObj = new THREE.Mesh(geo, objMat);
+  mainObj.castShadow = true;
+  mainObj.position.set(0, 0, 0);
+  mainObj.scale.setScalar(state.objectScale);
+  scene.add(mainObj);
+}
+buildObject(0);
+
+/* ── PIANO OMBRA ── */
+const shadowGeo = new THREE.PlaneGeometry(6, 6);
+const shadowMat = new THREE.ShadowMaterial({ opacity: 0.18 });
+const shadowPlane = new THREE.Mesh(shadowGeo, shadowMat);
+shadowPlane.rotation.x = -Math.PI / 2;
+shadowPlane.position.y = -1.2;
+shadowPlane.receiveShadow = true;
+scene.add(shadowPlane);
+
+/* ── HOVER RING (pulse attorno all'oggetto quando la mano è sopra) ── */
+const hoverRingGeo = new THREE.RingGeometry(0.28, 0.30, 64);
+const hoverRingMat = new THREE.MeshBasicMaterial({ color: 0x00ffe5, side: THREE.DoubleSide, transparent: true, opacity: 0 });
+const hoverRing = new THREE.Mesh(hoverRingGeo, hoverRingMat);
+hoverRing.rotation.x = -Math.PI / 2;
+scene.add(hoverRing);
+
+/* ── CURSORE 3D (sferetta che segue la punta del dito) ── */
+const cursorGeo = new THREE.SphereGeometry(0.028, 14, 14);
+const cursorMat = new THREE.MeshBasicMaterial({ color: 0xffe040, transparent: true, opacity: 0 });
+const cursorMesh = new THREE.Mesh(cursorGeo, cursorMat);
+scene.add(cursorMesh);
+
+/* ══════════════════════════════════════════════════════
+   4. MEDIAPIPE — SETUP
+   ══════════════════════════════════════════════════════ */
+const video = document.getElementById('video');
+const debugCanvas = document.getElementById('debug-canvas');
+const dctx = debugCanvas.getContext('2d');
+
+// Posizioni mani con smoothing separato
+const smoothPos = { right: new THREE.Vector3(), left: new THREE.Vector3() };
+const rawPos    = { right: new THREE.Vector3(), left: new THREE.Vector3() };
+// Posizione punta indice (LM 8) separata dal centro palmo (LM 9)
+const fingerTip = { right: new THREE.Vector3(), left: new THREE.Vector3() };
+
+let handsModule = null;   // MediaPipe Hands instance
+let camera_mp = null;     // MediaPipe Camera
+
+async function initMediaPipe() {
+  return new Promise((resolve, reject) => {
+    /* Carica MediaPipe Hands via script tag (CDN) */
+    const s1 = document.createElement('script');
+    s1.src = 'https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.js';
+    s1.crossOrigin = 'anonymous';
+    document.head.appendChild(s1);
+
+    const s2 = document.createElement('script');
+    s2.src = 'https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3.1675466862/camera_utils.js';
+    s2.crossOrigin = 'anonymous';
+    document.head.appendChild(s2);
+
+    const s3 = document.createElement('script');
+    s3.src = 'https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils@0.3.1675466124/drawing_utils.js';
+    s3.crossOrigin = 'anonymous';
+    document.head.appendChild(s3);
+
+    let loaded = 0;
+    const check = () => { if (++loaded === 3) resolve(); };
+    s1.onload = check; s2.onload = check; s3.onload = check;
+    s1.onerror = s2.onerror = s3.onerror = reject;
+  });
+}
+
+function setupHands() {
+  handsModule = new window.Hands({
+    locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/${f}`
+  });
+  handsModule.setOptions({
+    maxNumHands: 2,
+    modelComplexity: 1,
+    minDetectionConfidence: 0.7,
+    minTrackingConfidence: 0.6,
+  });
+  handsModule.onResults(onResults);
+}
+
+/* ══════════════════════════════════════════════════════
+   5. CONVERSIONE COORDINATE  2D → 3D
+   ══════════════════════════════════════════════════════ */
+/*
+  MediaPipe restituisce coordinate normalizzate [0,1] (x flippato).
+  Le mappiamo in coordinate scena Three.js:
+    x: [-1.1,  1.1]  (sinistra→destra nello schermo)
+    y: [-0.8,  0.8]  (alto→basso)
+    z: calcolata tramite "spread" delle dita (approssimazione profondità)
+*/
+function landmarkToWorld(lm, depthHint = 0) {
+  return new THREE.Vector3(
+    -(lm.x - 0.5) * 2.2,   // flip X (mirror)
+     -(lm.y - 0.5) * 1.6,
+    depthHint * DEPTH_SCALE
+  );
+}
+
+/* Stima profondità dalla distanza polso-dito medio ── */
+function estimateDepth(landmarks) {
+  const wrist = landmarks[0];
+  const mid   = landmarks[12];
+  const dx = wrist.x - mid.x, dy = wrist.y - mid.y;
+  const dist = Math.sqrt(dx*dx + dy*dy);
+  // distanza piccola → mano lontana (z positiva), grande → vicina (z negativa)
+  return THREE.MathUtils.clamp((0.2 - dist) * 10, -1, 1);
+}
+
+/* Distanza normalizzata tra due landmarks ── */
+function landmarkDist(a, b) {
+  const dx = a.x - b.x, dy = a.y - b.y, dz = (a.z||0) - (b.z||0);
+  return Math.sqrt(dx*dx + dy*dy + dz*dz);
+}
+
+/* ══════════════════════════════════════════════════════
+   6. CALLBACK MEDIAPIPE — CUORE DELLA LOGICA
+   ══════════════════════════════════════════════════════ */
+let detectedHands = {};   // { Right: landmarks[], Left: landmarks[] }
+
+function onResults(results) {
+  /* ── Draw debug ── */
+  if (debugCanvas.style.display !== 'none') {
+    dctx.clearRect(0, 0, 200, 150);
+    dctx.drawImage(results.image, 0, 0, 200, 150);
+    if (results.multiHandLandmarks) {
+      for (const lms of results.multiHandLandmarks) {
+        window.drawConnectors && window.drawConnectors(dctx, lms, window.HAND_CONNECTIONS, { color:'#00ffe5', lineWidth:1 });
+        window.drawLandmarks && window.drawLandmarks(dctx, lms, { color:'#ff4ded', lineWidth:1, radius:1.5 });
+      }
+    }
+  }
+
+  detectedHands = {};
+  if (!results.multiHandLandmarks) return;
+
+  results.multiHandLandmarks.forEach((lms, i) => {
+    const label = results.multiHandedness[i].label; // "Left" or "Right"
+    detectedHands[label] = lms;
+  });
+}
+
+/* ══════════════════════════════════════════════════════
+   7. PINCH DOTS UI
+   ══════════════════════════════════════════════════════ */
+const pinchR = document.getElementById('pinch-right');
+const pinchL = document.getElementById('pinch-left');
+
+function updatePinchDot(el, lm, isPinching) {
+  if (!lm || !isPinching) { el.style.opacity = '0'; return; }
+  const screenX = (1 - lm.x) * window.innerWidth;
+  const screenY = lm.y * window.innerHeight;
+  el.style.left = (screenX - 14) + 'px';
+  el.style.top  = (screenY - 14) + 'px';
+  el.style.opacity = '1';
+}
+
+/* ══════════════════════════════════════════════════════
+   8. AGGIORNAMENTO LOGICA PER FRAME
+   ══════════════════════════════════════════════════════
+
+   NUOVO SISTEMA — senza gesti complicati:
+   ┌─────────────────────────────────────────────────────┐
+   │  Mano destra APERTA sopra oggetto  → TRASCINA       │
+   │  Mano destra PINCH  sopra oggetto  → RUOTA          │
+   │  Mano sinistra PINCH mentre si    → SCALA           │
+   │  trascina o ruota (distanza mani)                   │
+   └─────────────────────────────────────────────────────┘
+   Il "sopra" = centro palmo entro HOVER_RADIUS dall'oggetto.
+   ══════════════════════════════════════════════════════ */
+function updateLogic() {
+  const rLms = detectedHands['Right'];
+  const lLms = detectedHands['Left'];
+
+  /* ── 1. AGGIORNA POSIZIONI CON SMOOTHING ── */
+  if (rLms) {
+    const depth = estimateDepth(rLms);
+    // Centro palmo (LM 9) per hover/drag
+    rawPos.right.copy(landmarkToWorld(rLms[9], depth));
+    const alpha = state.isDragging ? SMOOTH_DRAG : SMOOTH_IDLE;
+    smoothPos.right.lerp(rawPos.right, alpha);
+    // Punta indice (LM 8) per cursore visivo
+    fingerTip.right.copy(landmarkToWorld(rLms[8], depth));
+  }
+  if (lLms) {
+    const depth = estimateDepth(lLms);
+    rawPos.left.copy(landmarkToWorld(lLms[9], depth));
+    smoothPos.left.lerp(rawPos.left, SMOOTH_IDLE);
+    fingerTip.left.copy(landmarkToWorld(lLms[8], depth));
+  }
+
+  /* ── 2. RILEVAMENTO PINCH (pollice LM4 + indice LM8) ── */
+  state.rightPinching = rLms ? landmarkDist(rLms[4], rLms[8]) < PINCH_THRESHOLD : false;
+  state.leftPinching  = lLms ? landmarkDist(lLms[4], lLms[8]) < PINCH_THRESHOLD : false;
+
+  /* ── 3. PINCH DOTS UI ── */
+  updatePinchDot(pinchR, rLms ? rLms[4] : null, state.rightPinching);
+  updatePinchDot(pinchL, lLms ? lLms[4] : null, state.leftPinching);
+
+  /* ── 4. HOVER — la mano destra è sopra l'oggetto? ── */
+  if (rLms && mainObj) {
+    const dist = smoothPos.right.distanceTo(mainObj.position);
+    // Scala il raggio hover con la scala corrente dell'oggetto
+    const effectiveRadius = HOVER_RADIUS * Math.max(state.objectScale, 0.3);
+    state.rightHovering = dist < effectiveRadius;
+  } else {
+    state.rightHovering = false;
+  }
+
+  /* ── 5. CURSORE 3D VISIVO ── */
+  if (rLms) {
+    cursorMesh.position.copy(smoothPos.right);
+    // Colore: giallo = hover, ciano = normale
+    cursorMat.color.setHex(state.rightHovering ? 0xffe040 : 0x00ffe5);
+    cursorMat.opacity = state.rightHovering ? 0.9 : 0.4;
+  } else {
+    cursorMat.opacity = 0;
+  }
+
+  /* ── 6. HOVER RING sull'oggetto ── */
+  if (mainObj) {
+    hoverRing.position.copy(mainObj.position);
+    // Scala il ring con l'oggetto
+    const rs = state.objectScale * 1.1;
+    hoverRing.scale.setScalar(rs);
+    if (state.rightHovering && !state.isDragging) {
+      hoverRingMat.opacity = 0.55;
+      hoverRingMat.color.setHex(state.rightPinching ? 0xff4ded : 0x00ffe5);
+    } else if (state.isDragging) {
+      hoverRingMat.opacity = 0.3;
+      hoverRingMat.color.setHex(0xffe040);
+    } else {
+      hoverRingMat.opacity *= 0.85; // fade out
+    }
+  }
+
+  /* ════════════════════════════════════════════════
+     MODALITÀ INTERAZIONE basata su hover + pinch
+     ════════════════════════════════════════════════ */
+
+  /* ── A. INIZIO INTERAZIONE: mano destra entra nell'oggetto ── */
+  if (state.rightHovering && !state.isDragging) {
+    state.isDragging = true;
+    // Calcola offset tra centro palmo e posizione oggetto
+    state.grabOffset.copy(mainObj.position).sub(smoothPos.right);
+    objMat.emissive.setHex(0x003366);
+    objMat.emissiveIntensity = 1.0;
+    state.prevRightPos = smoothPos.right.clone();
+    state.prevLeftPos  = null;
+  }
+
+  /* ── B. FINE INTERAZIONE: mano destra esce dall'area ── */
+  if (!state.rightHovering && state.isDragging) {
+    // Lascia andare solo se la mano è CHIARAMENTE uscita (isteresi)
+    const dist = rLms ? smoothPos.right.distanceTo(mainObj.position) : 999;
+    const releaseRadius = HOVER_RADIUS * Math.max(state.objectScale, 0.3) * 1.5;
+    if (dist > releaseRadius || !rLms) {
+      state.isDragging  = false;
+      state.isScaling   = false;
+      objMat.emissive.setHex(0x003344);
+      objMat.emissiveIntensity = 0.4;
+      state.prevRightPos = null;
+      state.prevLeftPos  = null;
+      state.prevTwoHandDist = null;
+    }
+  }
+
+  /* ── C. SCALING con mano sinistra (pinch attivo di entrambe) ── */
+  state.isScaling = state.isDragging && state.leftPinching && !!lLms;
+
+  if (state.isScaling && mainObj) {
+    const dist3d = smoothPos.right.distanceTo(smoothPos.left);
+    if (state.prevTwoHandDist !== null) {
+      const delta = dist3d - state.prevTwoHandDist;
+      state.objectScale = THREE.MathUtils.clamp(state.objectScale + delta * 3.0, 0.12, 4.0);
+      mainObj.scale.setScalar(state.objectScale);
+    }
+    state.prevTwoHandDist = dist3d;
+    state.prevRightPos = null;
+    state.prevLeftPos  = null;
+  } else {
+    state.prevTwoHandDist = null;
+  }
+
+  /* ── D. Mentre è agganciato (e non si scala): ──
+        PINCH APERTO  → TRASCINA l'oggetto
+        PINCH CHIUSO  → RUOTA l'oggetto
+  ── */
+  if (state.isDragging && !state.isScaling && mainObj) {
+
+    if (!state.rightPinching) {
+      /* ── DRAG: oggetto segue il palmo ── */
+      const target = smoothPos.right.clone().add(state.grabOffset);
+      mainObj.position.lerp(target, SMOOTH_DRAG);
+      // Aggiorna offset continuamente così se l'oggetto viene ruotato non salta
+      state.grabOffset.copy(mainObj.position).sub(smoothPos.right);
+      state.prevRightPos = smoothPos.right.clone();
+
+    } else {
+      /* ── ROTATE: il movimento della mano destra ruota l'oggetto ── */
+      if (state.prevRightPos) {
+        const dx = smoothPos.right.x - state.prevRightPos.x;
+        const dy = smoothPos.right.y - state.prevRightPos.y;
+        mainObj.rotation.y += dx * 6.5;
+        mainObj.rotation.x += dy * 6.5;
+      }
+      state.prevRightPos = smoothPos.right.clone();
+    }
+
+    /* ── Mano sinistra aperta: rotazione extra sull'asse Z ── */
+    if (lLms && !state.leftPinching) {
+      if (state.prevLeftPos) {
+        const dx = smoothPos.left.x - state.prevLeftPos.x;
+        mainObj.rotation.z -= dx * 4.0;
+      }
+      state.prevLeftPos = smoothPos.left.clone();
+    } else if (!lLms) {
+      state.prevLeftPos = null;
+    }
+  }
+
+  /* ── STATUS TEXT ── */
+  updateStatus(!!rLms, !!lLms);
+}
+
+/* ══════════════════════════════════════════════════════
+   9. STATUS UI
+   ══════════════════════════════════════════════════════ */
+const statusEl = document.getElementById('status');
+const STATUS_MSGS = {
+  idle:    '〇 In attesa delle mani...',
+  right:   '▷ Avvicina la mano all\'oggetto',
+  hover:   '◎ Mano sull\'oggetto — apri per trascinare',
+  drag:    '◉ Trascinamento attivo',
+  rotate:  '↻ Pinch + muovi per ruotare',
+  scale:   '⟺ Scaling — pinch sinistra + distanza',
+  both:    '⇄ Due Mani Rilevate',
+};
+
+function updateStatus(hasRight, hasLeft) {
+  let msg = STATUS_MSGS.idle, cls = '';
+  if (state.isScaling)        { msg = STATUS_MSGS.scale;  cls = 'scale'; }
+  else if (state.isDragging && state.rightPinching) { msg = STATUS_MSGS.rotate; cls = 'rotate'; }
+  else if (state.isDragging)  { msg = STATUS_MSGS.drag;   cls = 'grab'; }
+  else if (state.rightHovering) { msg = STATUS_MSGS.hover; cls = 'grab'; }
+  else if (hasRight && hasLeft) { msg = STATUS_MSGS.both; }
+  else if (hasRight)           { msg = STATUS_MSGS.right; }
+
+  statusEl.textContent = msg;
+  statusEl.className = cls;
+}
+
+/* ══════════════════════════════════════════════════════
+   10. RENDER LOOP
+   ══════════════════════════════════════════════════════ */
+const clock = new THREE.Clock();
+let animFrame;
+
+function animate() {
+  animFrame = requestAnimationFrame(animate);
+  const t = clock.getElapsedTime();
+
+  /* Animazione idle oggetto */
+  if (!state.isDragging && mainObj) {
+    mainObj.position.y = Math.sin(t * 0.9) * 0.08;
+    mainObj.rotation.y += 0.004;
+    mainObj.rotation.x += 0.002;
+  }
+
+  /* Anima luce rim */
+  rimLight.intensity = 1.3 + Math.sin(t * 1.4) * 0.4;
+
+  /* Logica hand tracking */
+  if (state.running) updateLogic();
+
+  renderer.render(scene, camera);
+}
+animate();
+
+/* ══════════════════════════════════════════════════════
+   11. WEBCAM & MEDIAPIPE INIT
+   ══════════════════════════════════════════════════════ */
+async function startCamera() {
+  showLoader('CARICAMENTO MODELLO ML...', 10);
+
+  try {
+    await initMediaPipe();
+    setLoaderProgress(40, 'CONFIGURAZIONE HANDS...');
+
+    setupHands();
+    await handsModule.initialize();
+    setLoaderProgress(75, 'ACCESSO WEBCAM...');
+
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { width: 640, height: 480, facingMode: 'user', frameRate: { ideal: 30, max: 60 } }
+    });
+    video.srcObject = stream;
+    await new Promise(r => video.onloadedmetadata = r);
+    setLoaderProgress(95, 'AVVIO...');
+
+    /* MediaPipe Camera utility per loop di rilevamento */
+    camera_mp = new window.Camera(video, {
+      onFrame: async () => {
+        await handsModule.send({ image: video });
+      },
+      width: 640, height: 480
+    });
+    await camera_mp.start();
+
+    state.running = true;
+    setLoaderProgress(100, 'PRONTO');
+    setTimeout(hideLoader, 400);
+
+  } catch (err) {
+    console.error(err);
+    hideLoader();
+    statusEl.textContent = '✖ Errore: ' + (err.message || err);
+    statusEl.className = 'scale';
+  }
+}
+
+function stopCamera() {
+  state.running = false;
+  detectedHands = {};
+  if (camera_mp) { camera_mp.stop(); camera_mp = null; }
+  if (video.srcObject) {
+    video.srcObject.getTracks().forEach(t => t.stop());
+    video.srcObject = null;
+  }
+  statusEl.textContent = '⏹ Webcam Fermata';
+  statusEl.className = '';
+  pinchR.style.opacity = '0';
+  pinchL.style.opacity = '0';
+}
+
+/* ══════════════════════════════════════════════════════
+   12. LOADER HELPERS
+   ══════════════════════════════════════════════════════ */
+const loaderEl = document.getElementById('loader');
+const loaderBar = document.getElementById('loader-bar');
+const loaderText = document.getElementById('loader-text');
+
+function showLoader(msg, pct) {
+  loaderEl.classList.add('show');
+  loaderText.textContent = msg;
+  loaderBar.style.width = pct + '%';
+}
+function setLoaderProgress(pct, msg) {
+  loaderBar.style.width = pct + '%';
+  if (msg) loaderText.textContent = msg;
+}
+function hideLoader() {
+  loaderEl.classList.remove('show');
+}
+
+/* ══════════════════════════════════════════════════════
+   13. UI BUTTONS
+   ══════════════════════════════════════════════════════ */
+document.getElementById('splash-btn').addEventListener('click', () => {
+  const splash = document.getElementById('splash');
+  splash.classList.add('hide');
+  setTimeout(() => { splash.style.display = 'none'; }, 800);
+  startCamera();
+});
+
+document.getElementById('btn-stop').addEventListener('click', () => {
+  if (state.running) stopCamera();
+  else startCamera();
+  document.getElementById('btn-stop').textContent = state.running ? '⏹ Ferma Webcam' : '▶ Avvia Webcam';
+});
+
+document.getElementById('btn-debug').addEventListener('click', (e) => {
+  const show = debugCanvas.style.display !== 'block';
+  debugCanvas.style.display = show ? 'block' : 'none';
+  e.target.textContent = show ? '◼ Nascondi Debug' : '⬛ Debug Landmarks';
+  e.target.classList.toggle('active', show);
+});
+
+document.getElementById('btn-reset').addEventListener('click', () => {
+  if (!mainObj) return;
+  state.isDragging  = false;
+  state.isScaling   = false;
+  state.objectScale = 1.0;
+  mainObj.position.set(0, 0, 0);
+  mainObj.rotation.set(0, 0, 0);
+  mainObj.scale.setScalar(1.0);
+  objMat.emissive.setHex(0x003344);
+  objMat.emissiveIntensity = 0.4;
+});
+
+document.getElementById('btn-shape').addEventListener('click', () => {
+  state.shapeIndex = (state.shapeIndex + 1) % shapes.length;
+  const prevScale = state.objectScale;
+  buildObject(state.shapeIndex);
+  mainObj.scale.setScalar(prevScale);
+  state.isDragging  = false;
+  state.isScaling   = false;
+  objMat.emissive.setHex(0x003344);
+  objMat.emissiveIntensity = 0.4;
+});
+
+/* Update stop button text dynamically */
+setInterval(() => {
+  const btn = document.getElementById('btn-stop');
+  if (btn) btn.textContent = state.running ? '⏹ Ferma Webcam' : '▶ Avvia Webcam';
+}, 1000);
+
+</script>
+</body>
+</html>

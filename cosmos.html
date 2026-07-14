@@ -1,0 +1,1120 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<title>COSMOS</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@200;400&family=Share+Tech+Mono&display=swap');
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:#000;overflow:hidden;}
+canvas{display:block;position:fixed;top:0;left:0;}
+#ui{position:fixed;inset:0;pointer-events:none;z-index:10;font-family:'Share Tech Mono',monospace;}
+#xhair{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:14px;height:14px;opacity:.35;}
+#xhair::before,#xhair::after{content:'';position:absolute;background:#9ce;}
+#xhair::before{width:1px;height:100%;left:50%;transform:translateX(-50%);}
+#xhair::after{width:100%;height:1px;top:50%;transform:translateY(-50%);}
+#topbar{position:absolute;top:0;left:0;width:100%;display:flex;align-items:flex-start;justify-content:space-between;padding:16px 24px;background:linear-gradient(180deg,rgba(0,0,0,.65) 0%,transparent 100%);}
+#loc-name{color:rgba(200,230,255,.9);font-size:11px;letter-spacing:5px;display:block;margin-bottom:3px;font-family:'Orbitron',monospace;font-weight:200;}
+#loc-sub{color:rgba(160,200,240,.45);font-size:9px;letter-spacing:3px;}
+#spd-wrap{display:flex;align-items:center;gap:10px;pointer-events:all;}
+#spd-lbl{color:rgba(160,200,240,.4);font-size:9px;letter-spacing:2px;}
+#spd{-webkit-appearance:none;appearance:none;width:140px;height:2px;background:rgba(255,255,255,.1);border-radius:1px;cursor:pointer;outline:none;}
+#spd::-webkit-slider-thumb{-webkit-appearance:none;width:11px;height:11px;border-radius:50%;background:#7be;cursor:pointer;box-shadow:0 0 8px rgba(100,200,255,.5);}
+#spd-val{color:rgba(140,200,255,.65);font-size:9px;letter-spacing:2px;min-width:32px;}
+#pmsg{position:absolute;bottom:65px;left:50%;transform:translateX(-50%);color:rgba(200,235,255,.88);font-size:10px;letter-spacing:5px;text-transform:uppercase;background:rgba(0,0,0,.58);border:1px solid rgba(100,180,255,.25);padding:10px 22px;text-shadow:0 0 14px rgba(100,190,255,.4);opacity:0;transition:opacity .5s;white-space:nowrap;}
+#pmsg.on{opacity:1;}
+#hint{position:absolute;bottom:18px;left:50%;transform:translateX(-50%);color:rgba(255,255,255,.12);font-size:9px;letter-spacing:3px;}
+#intro{position:fixed;inset:0;background:#000;z-index:100;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:all;}
+#intro h1{font-family:'Orbitron',monospace;font-weight:200;color:#fff;font-size:54px;letter-spacing:18px;margin-bottom:10px;animation:gl 4s ease-in-out infinite;}
+#intro p{color:rgba(255,255,255,.2);font-size:10px;letter-spacing:6px;margin-bottom:62px;}
+#go{background:transparent;border:1px solid rgba(255,255,255,.18);color:rgba(255,255,255,.46);padding:13px 34px;font-size:10px;letter-spacing:5px;cursor:pointer;font-family:'Share Tech Mono',monospace;transition:all .4s;}
+#go:hover{border-color:rgba(100,180,255,.55);color:rgba(160,215,255,1);}
+@keyframes gl{0%,100%{text-shadow:0 0 40px rgba(80,160,255,.22);}50%{text-shadow:0 0 85px rgba(80,160,255,.7);}}
+#ov{position:fixed;inset:0;background:#000;z-index:50;opacity:0;pointer-events:none;transition:opacity .6s;}
+#ov.on{opacity:1;pointer-events:all;}
+#zone-flash{position:fixed;inset:0;background:#000;z-index:45;opacity:0;pointer-events:none;}
+</style>
+</head>
+<body>
+<div id="intro"><h1>COSMOS</h1><p>universo infinito da esplorare</p><button id="go">INIZIA IL VIAGGIO</button></div>
+<div id="ov"></div>
+<div id="zone-flash"></div>
+<div id="ui">
+  <div id="xhair"></div>
+  <div id="topbar">
+    <div><strong id="loc-name">SISTEMA SOLARE</strong><span id="loc-sub"></span></div>
+    <div id="spd-wrap"><span id="spd-lbl">VELOCITÀ</span><input type="range" id="spd" min="1" max="100" value="8"><span id="spd-val">x8</span></div>
+  </div>
+  <div id="pmsg"></div>
+  <div id="hint">W A S D — muovi &nbsp;|&nbsp; MOUSE — guarda</div>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+'use strict';
+
+// ═══════════════════════════════════════════════════════════
+// RENDERER
+// ═══════════════════════════════════════════════════════════
+const R = new THREE.WebGLRenderer({antialias:true,logarithmicDepthBuffer:true});
+R.setPixelRatio(Math.min(devicePixelRatio,2));
+R.setSize(innerWidth,innerHeight);
+document.body.appendChild(R.domElement);
+const CAM = new THREE.PerspectiveCamera(72,innerWidth/innerHeight,0.1,2000000000);
+
+// ═══════════════════════════════════════════════════════════
+// NOISE / UTILS
+// ═══════════════════════════════════════════════════════════
+const h21=(x,y,s=0)=>{const v=Math.sin(x*127.1+y*311.7+s*74.3)*43758.5453;return v-Math.floor(v);};
+const fbm=(x,y,o,s=0)=>{let v=0,a=.5,f=1;for(let i=0;i<o;i++){v+=a*h21(x*f,y*f,s+i*17);a*=.5;f*=2.1;}return v;};
+const mkC=(sz,fn)=>{const c=document.createElement('canvas');c.width=c.height=sz;fn(c.getContext('2d'),sz);return new THREE.CanvasTexture(c);};
+const V3=(...a)=>new THREE.Vector3(...a);
+const Q=()=>new THREE.Quaternion();
+
+// ═══════════════════════════════════════════════════════════
+// SHARED STAR FIELD
+// ═══════════════════════════════════════════════════════════
+function mkStars(scene,N,spread,sz,op=.9){
+  const g=new THREE.BufferGeometry(),p=new Float32Array(N*3),c=new Float32Array(N*3);
+  const pal=[[1,.95,.85],[.85,.9,1],[1,1,1],[1,.8,.6],[.7,.85,1],[.9,.9,.95]];
+  for(let i=0;i<N;i++){
+    const r=spread*(.12+Math.random()*.88),th=Math.random()*Math.PI*2,ph=Math.acos(2*Math.random()-1);
+    p[i*3]=r*Math.sin(ph)*Math.cos(th);p[i*3+1]=r*Math.sin(ph)*Math.sin(th);p[i*3+2]=r*Math.cos(ph);
+    const col=pal[~~(Math.random()*pal.length)];c[i*3]=col[0];c[i*3+1]=col[1];c[i*3+2]=col[2];
+  }
+  g.setAttribute('position',new THREE.BufferAttribute(p,3));
+  g.setAttribute('color',new THREE.BufferAttribute(c,3));
+  const pts=new THREE.Points(g,new THREE.PointsMaterial({size:sz,sizeAttenuation:true,vertexColors:true,transparent:true,opacity:op}));
+  pts.frustumCulled=false;
+  scene.add(pts);return pts;
+}
+
+// ── PERMANENT BACKGROUND SKYBOX — always visible at every scale ────────────
+// These are NOT sizeAttenuation — they stay the same pixel size always
+function mkSkyStars(N,sz,initOp){
+  const g=new THREE.BufferGeometry(),p=new Float32Array(N*3),c=new Float32Array(N*3);
+  const pal=[[1,.95,.85],[.85,.9,1],[1,1,1],[1,.8,.6],[.7,.85,1]];
+  for(let i=0;i<N;i++){
+    const th=Math.random()*Math.PI*2,ph=Math.acos(2*Math.random()-1);
+    const r=900000000;
+    p[i*3]=r*Math.sin(ph)*Math.cos(th);p[i*3+1]=r*Math.sin(ph)*Math.sin(th);p[i*3+2]=r*Math.cos(ph);
+    const col=pal[~~(Math.random()*pal.length)];c[i*3]=col[0];c[i*3+1]=col[1];c[i*3+2]=col[2];
+  }
+  g.setAttribute('position',new THREE.BufferAttribute(p,3));
+  g.setAttribute('color',new THREE.BufferAttribute(c,3));
+  const mat=new THREE.PointsMaterial({size:sz,sizeAttenuation:false,vertexColors:true,transparent:true,opacity:initOp});
+  const pts=new THREE.Points(g,mat);
+  pts.frustumCulled=false;
+  SS.add(pts);
+  return mat;
+}
+
+// ═══════════════════════════════════════════════════════════
+// ██ SPACE SCENE
+// ═══════════════════════════════════════════════════════════
+const SS=new THREE.Scene();
+SS.add(new THREE.AmbientLight(0x0d1525,.7));
+const sunPt=new THREE.PointLight(0xfff8e0,5,500000);
+SS.add(sunPt);
+mkStars(SS,6000,28000,.9);
+mkStars(SS,4000,120000,1.6);
+mkStars(SS,10000,900000,3.5,.7);
+mkStars(SS,8000,5000000,7,.55);
+// Faint tiny background stars — always visible from start
+const skyMatFaint=mkSkyStars(12000,0.7,.50);
+// Larger bright stars — start invisible, fade in from Spazio Profondo
+const skyMatFar=mkSkyStars(6000,2.0,0);
+
+// SUN — huge, dominant star
+const sunMesh=new THREE.Mesh(new THREE.SphereGeometry(180,64,64),new THREE.MeshBasicMaterial({color:0xfff9cc}));
+sunMesh.frustumCulled=false;
+SS.add(sunMesh);
+[[220,.18,0xffcc44],[280,.08,0xff9922],[380,.035,0xff5500],[520,.015,0xff3300]].forEach(([r,o,c])=>{
+  const m=new THREE.Mesh(new THREE.SphereGeometry(r,32,32),new THREE.MeshBasicMaterial({color:c,transparent:true,opacity:o,side:THREE.BackSide}));
+  m.frustumCulled=false;SS.add(m);
+});
+
+// ═══════════════════════════════════════════════════════════
+// PLANET TEXTURE LIBRARY
+// ═══════════════════════════════════════════════════════════
+const TX={
+  earth:()=>mkC(1024,(ctx,S)=>{
+    for(let px=0;px<S;px+=2)for(let py=0;py<S;py+=2){
+      const u=px/S,v=py/S,n=fbm(u*5.5,v*5.5,9,3),n2=fbm(u*14,v*14,4,333);
+      if(n>.43){
+        const t=Math.min(1,(n-.43)*5),m=n2>.55;
+        const r=m?~~(130+t*80):~~(42+t*55),g2=m?~~(115+t*60):~~(108+t*72),b=m?~~(90+t*50):~~(35+t*25);
+        ctx.fillStyle=`rgb(${r},${g2},${b})`;
+      }else{
+        const d=Math.max(0,(n-.08)/.35);
+        ctx.fillStyle=`rgb(${~~(8+d*28)},${~~(40+d*82)},${~~(95+d*105)})`;
+      }
+      ctx.fillRect(px,py,2,2);
+      const pv=Math.abs(v-.5)*2;if(pv>.80){const pt=Math.min(1,(pv-.80)/.14);ctx.fillStyle=`rgba(235,242,255,${pt*.94})`;ctx.fillRect(px,py,2,2);}
+    }
+  }),
+  mars:()=>mkC(1024,(ctx,S)=>{
+    for(let px=0;px<S;px+=2)for(let py=0;py<S;py+=2){
+      const u=px/S,v=py/S,n=fbm(u*5,v*5,8,4),n2=fbm(u*18,v*18,4,44);
+      ctx.fillStyle=`rgb(${~~Math.min(255,145+n*92+(n2-.5)*28)},${~~Math.max(0,Math.min(200,50+n*55+(n2-.5)*14))},${~~Math.max(0,20+n*18)})`;
+      ctx.fillRect(px,py,2,2);
+    }
+    for(let px=0;px<S;px+=2){[[0,10],[S-12,12]].forEach(([y0,h])=>{ctx.fillStyle='rgba(235,238,248,0.86)';ctx.fillRect(px,y0+fbm(px/S*10,y0/S,2,14)*8,2,h);});}
+  }),
+  mercury:()=>mkC(512,(ctx,S)=>{
+    for(let px=0;px<S;px+=2)for(let py=0;py<S;py+=2){
+      const n=fbm(px/S*7,py/S*7,8,1),m=fbm(px/S*22,py/S*22,4,11),v=~~(128+n*100+(m-.5)*40);
+      ctx.fillStyle=`rgb(${~~(v*.97)},${~~(v*.95)},${~~(v*.88)})`;ctx.fillRect(px,py,2,2);
+    }
+    for(let i=0;i<55;i++){const cx=~~(Math.random()*S),cy=~~(Math.random()*S),cr=2+Math.random()*28;ctx.strokeStyle=`rgba(60,55,50,${.32+Math.random()*.22})`;ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(cx,cy,cr,0,Math.PI*2);ctx.stroke();ctx.fillStyle=`rgba(70,65,58,${.14+Math.random()*.12})`;ctx.fill();}
+  }),
+  venus:()=>mkC(512,(ctx,S)=>{for(let py=0;py<S;py++){const v=py/S,n=fbm(v*12,0,4,2)+fbm(v*35,0,2,22)*.22,t=.5+Math.sin(v*Math.PI*18+n*6)*.5;ctx.fillStyle=`rgb(${~~(200+t*52)},${~~(162+t*44)},${~~(48+t*44)})`;ctx.fillRect(0,py,S,1);}}),
+  jupiter:()=>mkC(512,(ctx,S)=>{
+    for(let py=0;py<S;py++){const v=py/S,n=fbm(v*10,0,4,5)+fbm(v*28,0,3,55)*.28,t=.5+Math.sin(v*Math.PI*22+n*7)*.5;ctx.fillStyle=`rgb(${~~(198+t*54)},${~~(146+t*54)},${~~(85+t*44)})`;ctx.fillRect(0,py,S,1);}
+    const grd=ctx.createRadialGradient(S*.62,S*.54,0,S*.62,S*.54,S*.085);grd.addColorStop(0,'rgba(155,48,28,0.72)');grd.addColorStop(1,'rgba(155,48,28,0)');
+    ctx.save();ctx.translate(S*.62,S*.54);ctx.scale(1,.48);ctx.fillStyle=grd;ctx.beginPath();ctx.arc(0,0,S*.085,0,Math.PI*2);ctx.fill();ctx.restore();
+  }),
+  saturn:()=>mkC(512,(ctx,S)=>{for(let py=0;py<S;py++){const v=py/S,n=fbm(v*9,0,3,6)+fbm(v*24,0,2,66)*.22,t=.5+Math.sin(v*Math.PI*16+n*5)*.5;ctx.fillStyle=`rgb(${~~(193+t*54)},${~~(166+t*44)},${~~(102+t*50)})`;ctx.fillRect(0,py,S,1);}}),
+  uranus:()=>mkC(512,(ctx,S)=>{for(let px=0;px<S;px+=2)for(let py=0;py<S;py+=2){const n=fbm(px/S*3,py/S*3,4,7);ctx.fillStyle=`rgb(${~~(102+n*42)},${~~(190+n*34)},${~~(208+n*28)})`;ctx.fillRect(px,py,2,2);}}),
+  neptune:()=>mkC(512,(ctx,S)=>{
+    for(let px=0;px<S;px+=2)for(let py=0;py<S;py+=2){const n=fbm(px/S*4,py/S*4,5,8),m=fbm(px/S*12,py/S*12,3,88);ctx.fillStyle=`rgb(${~~(26+n*28)},${~~(68+n*82+m*22)},${~~(182+n*62)})`;ctx.fillRect(px,py,2,2);}
+  }),
+  moon:()=>mkC(512,(ctx,S)=>{
+    for(let px=0;px<S;px+=2)for(let py=0;py<S;py+=2){const n=fbm(px/S*5,py/S*5,7,99),m=fbm(px/S*18,py/S*18,3,199),v=~~(148+n*82+(m-.5)*36);ctx.fillStyle=`rgb(${~~(v*.96)},${~~(v*.95)},${~~(v*.91)})`;ctx.fillRect(px,py,2,2);}
+    for(let i=0;i<85;i++){const cx=~~(Math.random()*S),cy=~~(Math.random()*S),cr=1+Math.random()*22;ctx.strokeStyle=`rgba(80,78,70,${.28+Math.random()*.28})`;ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(cx,cy,cr,0,Math.PI*2);ctx.stroke();ctx.fillStyle=`rgba(88,86,78,${.10+Math.random()*.12})`;ctx.fill();}
+  }),
+  exo:(s,r1,g1,b1,r2,g2,b2)=>mkC(512,(ctx,S)=>{
+    for(let px=0;px<S;px+=2)for(let py=0;py<S;py+=2){
+      const n=fbm(px/S*5,py/S*5,7,s*29),m=fbm(px/S*12,py/S*12,3,s*17),t=n*.7+m*.3;
+      ctx.fillStyle=`rgb(${~~Math.max(0,Math.min(255,r1+t*(r2-r1)))},${~~Math.max(0,Math.min(255,g1+t*(g2-g1)))},${~~Math.max(0,Math.min(255,b1+t*(b2-b1)))})`;
+      ctx.fillRect(px,py,2,2);
+    }
+  }),
+  clouds:(s)=>mkC(512,(ctx,S)=>{
+    ctx.clearRect(0,0,S,S);
+    for(let px=0;px<S;px+=2)for(let py=0;py<S;py+=2){const n=fbm(px/S*7,py/S*7,6,s);if(n>.50){const a=Math.min(1,(n-.50)*4);ctx.fillStyle=`rgba(255,255,255,${a*.82})`;ctx.fillRect(px,py,2,2);}}
+  }),
+};
+
+// ═══════════════════════════════════════════════════════════
+// PLANET MESH BUILDER
+// ═══════════════════════════════════════════════════════════
+function mkPlanet(radius,tex,atmo,hasRings,ringTint,tilt,hasClouds,cloudSeed){
+  const mesh=new THREE.Mesh(new THREE.SphereGeometry(radius,56,56),
+    new THREE.MeshPhongMaterial({map:tex,shininess:6,specular:new THREE.Color(.03,.03,.05)}));
+  mesh.rotation.z=tilt||0;
+  if(atmo){
+    [[1.07,.11],[1.14,.048],[1.24,.018]].forEach(([s,o])=>
+      mesh.add(new THREE.Mesh(new THREE.SphereGeometry(radius*s,32,32),new THREE.MeshBasicMaterial({color:atmo,transparent:true,opacity:o,side:THREE.BackSide}))));
+  }
+  if(hasClouds){
+    const cloud=new THREE.Mesh(new THREE.SphereGeometry(radius*1.022,32,32),
+      new THREE.MeshPhongMaterial({map:TX.clouds(cloudSeed||42),transparent:true,opacity:.88,depthWrite:false}));
+    mesh.add(cloud);mesh.userData.cloud=cloud;
+  }
+  if(hasRings){
+    const ri=radius*1.52,ro=radius*2.62;
+    const rg=new THREE.RingGeometry(ri,ro,128);
+    const pa=rg.attributes.position,uv=rg.attributes.uv;
+    for(let i=0;i<pa.count;i++){const x=pa.getX(i),y=pa.getY(i),r2=Math.sqrt(x*x+y*y);uv.setXY(i,(r2-ri)/(ro-ri),Math.atan2(y,x)/(Math.PI*2));}
+    const rc=ringTint||[220,195,145];
+    const rt=mkC(256,(ctx,S)=>{
+      const g=ctx.createLinearGradient(0,0,S,0);
+      g.addColorStop(0,`rgba(${rc[0]},${rc[1]},${rc[2]},0)`);
+      g.addColorStop(.15,`rgba(${rc[0]},${rc[1]},${rc[2]},.62)`);
+      g.addColorStop(.42,`rgba(${~~(rc[0]*.82)},${~~(rc[1]*.82)},${~~(rc[2]*.82)},.42)`);
+      g.addColorStop(.68,`rgba(${rc[0]},${rc[1]},${rc[2]},.58)`);
+      g.addColorStop(1,`rgba(${rc[0]},${rc[1]},${rc[2]},0)`);
+      ctx.fillStyle=g;ctx.fillRect(0,0,S,S);
+    });
+    const ring=new THREE.Mesh(rg,new THREE.MeshBasicMaterial({map:rt,transparent:true,opacity:.78,side:THREE.DoubleSide,depthWrite:false}));
+    ring.rotation.x=Math.PI/2;mesh.add(ring);
+  }
+  return mesh;
+}
+
+// ═══════════════════════════════════════════════════════════
+// SOLAR SYSTEM  (scaled so planets are visible but not huge)
+// AU=260  Sun radius=18  planets 4–55 units
+// ═══════════════════════════════════════════════════════════
+const AU=2200, ETICKS=4000;
+
+const SOL_DEF=[
+  {name:"MERCURIO",au:.387,r:30,  tex:TX.mercury(),atmo:null,    rings:false,tilt:.03},
+  {name:"VENERE",  au:.723,r:55,  tex:TX.venus(),  atmo:0xffdd88,rings:false,tilt:.05},
+  {name:"TERRA",   au:1.0, r:65,  tex:TX.earth(),  atmo:0x4488ff,rings:false,tilt:.41,clouds:true,cseed:33},
+  {name:"MARTE",   au:1.524,r:40, tex:TX.mars(),   atmo:0xff5522,rings:false,tilt:.44},
+  {name:"GIOVE",   au:5.2, r:200, tex:TX.jupiter(),atmo:0xffaa66,rings:false,tilt:.05},
+  {name:"SATURNO", au:9.58,r:170, tex:TX.saturn(), atmo:0xffcc88,rings:true, tilt:.47,rt:[222,198,148]},
+  {name:"URANO",   au:19.2,r:100, tex:TX.uranus(), atmo:0x66ccee,rings:true, tilt:1.71,rt:[155,215,228]},
+  {name:"NETTUNO", au:30.05,r:90, tex:TX.neptune(),atmo:0x2244cc,rings:false,tilt:.49},
+];
+
+const solObjs=[];
+SOL_DEF.forEach((d,i)=>{
+  const mesh=mkPlanet(d.r,d.tex,d.atmo,d.rings,d.rt,d.tilt,d.clouds,d.cseed);
+  const dist=d.au*AU,ang=Math.random()*Math.PI*2;
+  mesh.position.set(Math.cos(ang)*dist,0,Math.sin(ang)*dist);
+  mesh.userData={ang,dist,os:(Math.PI*2)/(ETICKS*Math.pow(d.au,1.5)),rs:.002+i*.0008};
+  SS.add(mesh);
+  solObjs.push({mesh,def:d});
+});
+
+// Moon
+const moonTex=TX.moon();
+const moonMesh=mkPlanet(22,moonTex,null,false,null,.09);
+SS.add(moonMesh);
+let moonAng=0;
+
+// ═══════════════════════════════════════════════════════════
+// MILKY WAY — matches reference: teal/green nebula explosion, bright white core
+// ═══════════════════════════════════════════════════════════
+function buildMW(){
+  const grp=new THREE.Group();
+  const MW_R=280000;
+
+  // LAYER 1: Dense bright core explosion (white/cyan)
+  {const N=8000,g=new THREE.BufferGeometry(),p=new Float32Array(N*3),c=new Float32Array(N*3);
+  for(let i=0;i<N;i++){
+    const t=Math.pow(Math.random(),2.2),arm=i%4,ang=(arm/4)*Math.PI*2+t*Math.PI*4+(Math.random()-.5)*.4;
+    const d=t*MW_R*.18;
+    p[i*3]=d*Math.cos(ang)+(Math.random()-.5)*MW_R*.02;
+    p[i*3+1]=(Math.random()-.5)*MW_R*.008*(1-t*.8);
+    p[i*3+2]=d*Math.sin(ang)+(Math.random()-.5)*MW_R*.02;
+    const br=.6+Math.random()*.4;c[i*3]=br;c[i*3+1]=br;c[i*3+2]=br;
+  }
+  g.setAttribute('position',new THREE.BufferAttribute(p,3));g.setAttribute('color',new THREE.BufferAttribute(c,3));
+  const pts=new THREE.Points(g,new THREE.PointsMaterial({size:1.8,sizeAttenuation:false,vertexColors:true,transparent:true,opacity:0}));
+  grp.add(pts);}
+
+  // LAYER 2: Teal/green nebula arms (like the image)
+  {const N=35000,g=new THREE.BufferGeometry(),p=new Float32Array(N*3),c=new Float32Array(N*3);
+  const pal=[[.15,.75,.65],[.10,.65,.75],[.20,.80,.55],[.05,.55,.70],[.30,.85,.60],[.12,.70,.80],[.40,.90,.50]];
+  for(let i=0;i<N;i++){
+    const arm=i%3,t=Math.pow(Math.random(),.75);
+    const ang=(arm/3)*Math.PI*2+t*Math.PI*3.5+(Math.random()-.5)*.9;
+    const d=t*MW_R*(.04+Math.random()*.96);
+    p[i*3]=d*Math.cos(ang)+(Math.random()-.5)*MW_R*.06;
+    p[i*3+1]=(Math.random()-.5)*MW_R*(.014*(1-d/MW_R*.5)+.003);
+    p[i*3+2]=d*Math.sin(ang)+(Math.random()-.5)*MW_R*.06;
+    const col=pal[~~(Math.random()*pal.length)],br=.3+Math.random()*.7;
+    c[i*3]=col[0]*br;c[i*3+1]=col[1]*br;c[i*3+2]=col[2]*br;
+  }
+  g.setAttribute('position',new THREE.BufferAttribute(p,3));g.setAttribute('color',new THREE.BufferAttribute(c,3));
+  const pts=new THREE.Points(g,new THREE.PointsMaterial({size:1.4,sizeAttenuation:false,vertexColors:true,transparent:true,opacity:0}));
+  grp.add(pts);}
+
+  // LAYER 3: Dark blue cloud wisps
+  {const N=7000,g=new THREE.BufferGeometry(),p=new Float32Array(N*3),c=new Float32Array(N*3);
+  for(let i=0;i<N;i++){
+    const t=Math.pow(Math.random(),.6),arm=i%5,ang=(arm/5)*Math.PI*2+t*Math.PI*2+(Math.random()-.5)*1.2;
+    const d=t*MW_R*(.1+Math.random()*.9);
+    p[i*3]=d*Math.cos(ang)+(Math.random()-.5)*MW_R*.12;
+    p[i*3+1]=(Math.random()-.5)*MW_R*.025;
+    p[i*3+2]=d*Math.sin(ang)+(Math.random()-.5)*MW_R*.12;
+    const br=.2+Math.random()*.5;c[i*3]=br*.15;c[i*3+1]=br*.22;c[i*3+2]=br*.55;
+  }
+  g.setAttribute('position',new THREE.BufferAttribute(p,3));g.setAttribute('color',new THREE.BufferAttribute(c,3));
+  grp.add(new THREE.Points(g,new THREE.PointsMaterial({size:1.6,sizeAttenuation:false,vertexColors:true,transparent:true,opacity:0})));}
+
+  // LAYER 4: Bright star sparkles scattered throughout
+  {const N=4000,g=new THREE.BufferGeometry(),p=new Float32Array(N*3),c=new Float32Array(N*3);
+  for(let i=0;i<N;i++){
+    const r=MW_R*(Math.random()*.85),th=Math.random()*Math.PI*2,ph=Math.acos(2*Math.random()-1);
+    p[i*3]=r*Math.sin(ph)*Math.cos(th);p[i*3+1]=r*Math.sin(ph)*Math.sin(th)*.05;p[i*3+2]=r*Math.cos(ph);
+    const br=.7+Math.random()*.3;const g2=.7+Math.random()*.3;c[i*3]=br;c[i*3+1]=g2;c[i*3+2]=1;
+  }
+  g.setAttribute('position',new THREE.BufferAttribute(p,3));g.setAttribute('color',new THREE.BufferAttribute(c,3));
+  grp.add(new THREE.Points(g,new THREE.PointsMaterial({size:2.2,sizeAttenuation:false,vertexColors:true,transparent:true,opacity:0})));}
+
+  grp.rotation.x=.42;
+  grp.frustumCulled=false;
+  grp.traverse(o=>{o.frustumCulled=false;});
+  SS.add(grp);
+  const allPts=grp.children.filter(c=>c.isPoints);
+  const maxOps=[.90,.75,.65,.85];
+  return {grp,allPts,maxOps,
+    get mat(){return {opacity:allPts[0].material.opacity}},
+    setOpacity(v){allPts.forEach((pts,i)=>pts.material.opacity=v*maxOps[i]);}
+  };
+}
+const MW=buildMW();
+
+// ═══════════════════════════════════════════════════════════
+// 7 EXPLORABLE GALAXIES — huge, always persistent beyond 400k AU
+// Each has its own 3 explorable planets
+// ═══════════════════════════════════════════════════════════
+const GAL_R=260000; // same visual scale as MW
+
+const GAL_DEFS=[
+  {name:"ANDROMEDA M31",   pos:[6800000, 180000,-3400000], col:[.92,.82,.70],type:'spiral', arms:4,tilt:[.28,.12,0]},
+  {name:"TRIANGULUM M33",  pos:[-5200000,-260000,-6800000],col:[.68,.86,.96],type:'spiral', arms:3,tilt:[.82,.50,.18]},
+  {name:"NGC 1300",        pos:[4600000, 380000, 7400000], col:[.97,.74,.48],type:'barred', arms:2,tilt:[.22,.88,.10]},
+  {name:"VORTICE M51",     pos:[-7800000, 120000,3600000], col:[.52,.92,.76],type:'spiral', arms:3,tilt:[1.18,.32,.40]},
+  {name:"FUOCO NGC4594",   pos:[1600000,-3600000,-8400000],col:[1.0,.48,.25],type:'elliptical',arms:0,tilt:[0,0,0]},
+  {name:"NGC 6744",        pos:[-6800000, 600000,5600000], col:[.88,.70,.95],type:'spiral', arms:4,tilt:[.5,.3,.8]},
+  {name:"RUOTA ESO 350",   pos:[6200000,-1500000,-6200000],col:[.75,.90,.55],type:'ring',   arms:0,tilt:[.1,1.0,.2]},
+];
+
+// Exoplanet configs per galaxy (3 per galaxy)
+const EXO_CONFIGS=[
+  // [r1,g1,b1,r2,g2,b2,  atmo_hex,  hasRings, tilt]
+  [[60,15,185,120,40,210, 0x9922ff,false,.3],[32,120,28, 55,180,45, 0x22ff88,true,.5],[190,95,20,230,150,55,0xff8822,false,.2]],
+  [[28,65,185,45,90,220,  0x2255cc,true,.4],[210,78,18, 240,130,35,0xff7722,false,.3],[140,28,170,180,55,200,0xaa33cc,true,.6]],
+  [[18,155,135,35,200,170,0x22ccaa,false,.2],[195,35,28, 230,68,45,0xff3322,true,.5],[80,120,200,110,155,230,0x5588ff,false,.4]],
+  [[85,210,85, 115,240,115,0x44ff66,true,.3],[165,45,195,200,75,225,0xcc44ff,false,.5],[215,165,28,245,195,55,0xffcc22,true,.2]],
+  [[210,42,42, 240,72,72, 0xff3344,false,.4],[42,165,210,68,200,240,0x22aaff,true,.3],[168,148,22,208,185,48,0xddbb22,false,.6]],
+  [[52,185,205,78,215,235,0x33ccee,true,.2],[195,68,145,225,95,175,0xff55aa,false,.4],[115,195,55,148,225,85,0x88ee33,true,.5]],
+  [[235,125,22,255,165,55,0xff8822,false,.3],[22,195,168,48,228,198,0x22ddaa,true,.5],[128,48,195,165,75,225,0xaa33ff,false,.4]],
+];
+
+const galObjs=[];
+
+function buildGalaxy(gd,gi){
+  const grp=new THREE.Group();
+
+  // Star cloud — 18k points (size compensates for density)
+  const N=18000,g=new THREE.BufferGeometry(),p=new Float32Array(N*3),c=new Float32Array(N*3);
+  const [cr,cg,cb]=gd.col;
+  for(let i=0;i<N;i++){
+    let x=0,y=0,z=0;
+    if(gd.type==='elliptical'){
+      const r=GAL_R*Math.pow(Math.random(),.62),th=Math.random()*Math.PI*2,ph=Math.acos(2*Math.random()-1);
+      x=r*Math.sin(ph)*Math.cos(th)*.88;y=r*Math.sin(ph)*Math.sin(th)*.30;z=r*Math.cos(ph)*.88;
+    }else if(gd.type==='ring'){
+      const r=GAL_R*(.30+Math.random()*.40),th=Math.random()*Math.PI*2;
+      x=(r+(Math.random()-.5)*GAL_R*.12)*Math.cos(th);z=(r+(Math.random()-.5)*GAL_R*.12)*Math.sin(th);y=(Math.random()-.5)*GAL_R*.022;
+    }else{
+      const arms=gd.arms,arm=i%arms,t=Math.pow(Math.random(),.82);
+      const barC=gd.type==='barred'&&t<.26;
+      const ang=(arm/arms)*Math.PI*2+t*Math.PI*2.9+(Math.random()-.5)*(barC?.14:.50);
+      const d=t*GAL_R*(.015+Math.random()*.985);
+      x=d*Math.cos(ang)+(Math.random()-.5)*GAL_R*.035;z=d*Math.sin(ang)+(Math.random()-.5)*GAL_R*.035;y=(Math.random()-.5)*GAL_R*.015;
+    }
+    p[i*3]=x;p[i*3+1]=y;p[i*3+2]=z;
+    const br=.20+Math.random()*.80;c[i*3]=cr*br;c[i*3+1]=cg*br;c[i*3+2]=cb*br;
+  }
+  g.setAttribute('position',new THREE.BufferAttribute(p,3));g.setAttribute('color',new THREE.BufferAttribute(c,3));
+  const mat=new THREE.PointsMaterial({size:1.6,sizeAttenuation:false,vertexColors:true,transparent:true,opacity:.82});
+  const galPts=new THREE.Points(g,mat);
+  galPts.frustumCulled=false;
+  grp.add(galPts);
+
+  // Core
+  const coreMesh=new THREE.Mesh(new THREE.SphereGeometry(GAL_R*.03,16,16),
+    new THREE.MeshBasicMaterial({color:new THREE.Color(cr,cg,cb),transparent:true,opacity:.28}));
+  coreMesh.frustumCulled=false;
+  grp.add(coreMesh);
+
+  grp.position.set(...gd.pos);
+  grp.rotation.set(...gd.tilt);
+  grp.frustumCulled=false;
+  grp.traverse(o=>{o.frustumCulled=false;});
+  SS.add(grp);
+  galObjs.push({grp,gd,mat,galPlanets:[]});
+}
+GAL_DEFS.forEach((d,i)=>buildGalaxy(d,i));
+
+// ═══════════════════════════════════════════════════════════
+// DISTANT GALAXY FIELD — 50+ more galaxies, appear progressively
+// as camera moves away. Same star-point style as the 7 main ones.
+// ═══════════════════════════════════════════════════════════
+const DIST_GAL_COLS=[
+  [.92,.82,.70],[.68,.86,.96],[.97,.74,.48],[.52,.92,.76],[1.0,.48,.25],
+  [.88,.70,.95],[.75,.90,.55],[.70,.60,.95],[.95,.85,.50],[.50,.88,.92],
+  [.85,.55,.70],[.60,.80,.40],[.40,.70,.95],[.95,.65,.35],[.80,.95,.65],
+];
+const DIST_GAL_TYPES=['spiral','spiral','spiral','barred','elliptical','ring','spiral'];
+
+// Build a simple galaxy at a given world position for the distant field
+function buildDistGalaxy(pos,col,type,arms,tilt,initOp){
+  const grp=new THREE.Group();
+  const N=10000,g=new THREE.BufferGeometry(),p=new Float32Array(N*3),c=new Float32Array(N*3);
+  const [cr,cg,cb]=col;
+  for(let i=0;i<N;i++){
+    let x=0,y=0,z=0;
+    if(type==='elliptical'){
+      const r=GAL_R*Math.pow(Math.random(),.62),th=Math.random()*Math.PI*2,ph=Math.acos(2*Math.random()-1);
+      x=r*Math.sin(ph)*Math.cos(th)*.88;y=r*Math.sin(ph)*Math.sin(th)*.28;z=r*Math.cos(ph)*.88;
+    }else if(type==='ring'){
+      const r=GAL_R*(.28+Math.random()*.38),th=Math.random()*Math.PI*2;
+      x=(r+(Math.random()-.5)*GAL_R*.10)*Math.cos(th);z=(r+(Math.random()-.5)*GAL_R*.10)*Math.sin(th);y=(Math.random()-.5)*GAL_R*.018;
+    }else{
+      const nArms=arms||3,arm=i%nArms,t=Math.pow(Math.random(),.82);
+      const barC=type==='barred'&&t<.26;
+      const ang=(arm/nArms)*Math.PI*2+t*Math.PI*2.9+(Math.random()-.5)*(barC?.14:.55);
+      const d=t*GAL_R*(.015+Math.random()*.985);
+      x=d*Math.cos(ang)+(Math.random()-.5)*GAL_R*.04;z=d*Math.sin(ang)+(Math.random()-.5)*GAL_R*.04;y=(Math.random()-.5)*GAL_R*.014;
+    }
+    p[i*3]=x;p[i*3+1]=y;p[i*3+2]=z;
+    const br=.18+Math.random()*.82;c[i*3]=cr*br;c[i*3+1]=cg*br;c[i*3+2]=cb*br;
+  }
+  g.setAttribute('position',new THREE.BufferAttribute(p,3));g.setAttribute('color',new THREE.BufferAttribute(c,3));
+  const mat=new THREE.PointsMaterial({size:1.4,sizeAttenuation:false,vertexColors:true,transparent:true,opacity:initOp});
+  const pts=new THREE.Points(g,mat);pts.frustumCulled=false;grp.add(pts);
+  // Core glow
+  const core=new THREE.Mesh(new THREE.SphereGeometry(GAL_R*.025,12,12),
+    new THREE.MeshBasicMaterial({color:new THREE.Color(cr,cg,cb),transparent:true,opacity:.22}));
+  core.frustumCulled=false;grp.add(core);
+  grp.position.set(...pos);
+  grp.rotation.set(...tilt);
+  grp.frustumCulled=false;grp.traverse(o=>{o.frustumCulled=false;});
+  SS.add(grp);
+  return {grp,mat};
+}
+
+// Procedurally generate 54 galaxies at increasing distances
+// grouped in 3 shells: near (14–25M), mid (25–60M), far (60–200M)
+const distGalObjs=[]; // [{obj, startD, fullD}]
+(function(){
+  const rng=(n,s)=>{const v=Math.sin(n*127.1+s*311.7)*43758.5453;return v-Math.floor(v);};
+  const shells=[
+    {count:14, rMin:14e6, rMax:25e6, startD:12e6, fullD:22e6},
+    {count:20, rMin:25e6, rMax:70e6, startD:22e6, fullD:55e6},
+    {count:20, rMin:70e6, rMax:220e6,startD:55e6,  fullD:150e6},
+  ];
+  let gi=0;
+  shells.forEach(sh=>{
+    for(let i=0;i<sh.count;i++,gi++){
+      const th=rng(gi,1)*Math.PI*2,ph=Math.acos(2*rng(gi,2)-.9999);
+      const r=sh.rMin+rng(gi,3)*(sh.rMax-sh.rMin);
+      const pos=[
+        r*Math.sin(ph)*Math.cos(th),
+        r*Math.sin(ph)*Math.sin(th)*.45,
+        r*Math.cos(ph)
+      ];
+      const ci=~~(rng(gi,4)*DIST_GAL_COLS.length);
+      const col=DIST_GAL_COLS[ci];
+      const typeIdx=~~(rng(gi,5)*DIST_GAL_TYPES.length);
+      const type=DIST_GAL_TYPES[typeIdx];
+      const arms=2+~~(rng(gi,6)*3);
+      const tilt=[rng(gi,7)*Math.PI,rng(gi,8)*Math.PI*2,rng(gi,9)*Math.PI*.5];
+      const obj=buildDistGalaxy(pos,col,type,arms,tilt,0);
+      distGalObjs.push({obj, startD:sh.startD, fullD:sh.fullD});
+    }
+  });
+})();
+
+// ═══════════════════════════════════════════════════════════
+// BACKGROUND UNIVERSE — camera-relative galaxy clouds
+// These always surround the camera at whatever scale you're at
+// ═══════════════════════════════════════════════════════════
+
+// Universe shell: fixed-size pixel dots, camera-relative offset each frame
+// This means they're ALWAYS visible regardless of where the camera is
+function buildUnivLayer(count,seed,pixSz,op,spread){
+  const g=new THREE.BufferGeometry(),p=new Float32Array(count*3),c=new Float32Array(count*3);
+  const galCols=[[1.0,.90,.72],[.85,.90,1.0],[1.0,.95,.85],[.70,.85,1.0],[1.0,.78,.55],[.92,.92,1.0],[.80,.70,.95],[.78,.55,.95]];
+  const rng=n=>{const v=Math.sin(n*127.1+seed*311.7)*43758.5453;return v-Math.floor(v);};
+  for(let i=0;i<count;i++){
+    // Distribute on sphere around origin
+    const th=rng(i)*Math.PI*2,ph=Math.acos(2*rng(i+count)-.9999);
+    const r=spread*(0.3+rng(i+count*2)*0.7);
+    p[i*3]=r*Math.sin(ph)*Math.cos(th);
+    p[i*3+1]=r*Math.sin(ph)*Math.sin(th)*0.55; // slight flattening for cosmic web feel
+    p[i*3+2]=r*Math.cos(ph);
+    const ci=~~(rng(i+count*3)*galCols.length),br=.35+rng(i+count*4)*.65;
+    c[i*3]=galCols[ci][0]*br;c[i*3+1]=galCols[ci][1]*br;c[i*3+2]=galCols[ci][2]*br;
+  }
+  g.setAttribute('position',new THREE.BufferAttribute(p,3));
+  g.setAttribute('color',new THREE.BufferAttribute(c,3));
+  // Use sizeAttenuation:false so they stay pixel-sized regardless of zoom
+  const mat=new THREE.PointsMaterial({size:pixSz,sizeAttenuation:false,vertexColors:true,transparent:true,opacity:0});
+  const pts=new THREE.Points(g,mat);
+  pts.frustumCulled=false;
+  SS.add(pts);
+  return {pts,mat,spread};
+}
+
+// Three layers of background galaxies — each at a different visual density/size
+// They're placed at 900M world units spread so they look like a cosmic backdrop
+const UNIV_LAYERS=[
+  {layer:buildUnivLayer(1200,  17,1.8,.0,900000000),startD:14e6,   fullD:50e6,   maxOp:.70},
+  {layer:buildUnivLayer(3000,  31,1.5,.0,900000000),startD:50e6,   fullD:250e6,  maxOp:.65},
+  {layer:buildUnivLayer(7000,  53,1.2,.0,900000000),startD:200e6,  fullD:800e6,  maxOp:.60},
+];
+
+function updateUniv(dist){
+  UNIV_LAYERS.forEach(u=>{
+    const t=Math.max(0,Math.min(1,(dist-u.startD)/(u.fullD-u.startD)));
+    const target=t*u.maxOp;
+    u.layer.mat.opacity+=(target-u.layer.mat.opacity)*.025;
+    u.layer.pts.position.copy(CAM.position);
+  });
+  // Nebula: fades in when far beyond all galaxies
+  const nebT=Math.max(0,Math.min(1,(dist-500e6)/800e6));
+  nebulaMat.opacity+=(nebT*.92-nebulaMat.opacity)*.018;
+  nebulaSprite.scale.setScalar(dist*2.2);
+  nebulaSprite.position.set(0,0,0);
+}
+
+// ═══════════════════════════════════════════════════════════
+// COSMIC NEBULA SPRITE — visible only from extreme distances
+// Looks like the reference: teal explosion, dark clouds, bright core
+// ═══════════════════════════════════════════════════════════
+function buildNebulaTex(){
+  const S=1024,cv=document.createElement('canvas');cv.width=cv.height=S;
+  const ctx=cv.getContext('2d');
+
+  // Pure black background
+  ctx.fillStyle='#000';ctx.fillRect(0,0,S,S);
+
+  // Helper: draw a soft cloud blob
+  const blob=(cx,cy,rx,ry,angle,r,g,b,a)=>{
+    ctx.save();
+    ctx.translate(cx,cy);ctx.rotate(angle);ctx.scale(rx/ry,1);
+    const grd=ctx.createRadialGradient(0,0,0,0,0,ry);
+    grd.addColorStop(0,`rgba(${r},${g},${b},${a})`);
+    grd.addColorStop(.35,`rgba(${r},${g},${b},${a*.55})`);
+    grd.addColorStop(.7,`rgba(${r},${g},${b},${a*.18})`);
+    grd.addColorStop(1,'rgba(0,0,0,0)');
+    ctx.fillStyle=grd;ctx.beginPath();ctx.arc(0,0,ry,0,Math.PI*2);ctx.fill();
+    ctx.restore();
+  };
+
+  // ── DEEP DARK SPACE BASE ──────────────────────────────────
+  blob(S*.5,S*.5,S*.8,S*.55,0, 0,8,18,.85);
+  blob(S*.5,S*.5,S*.65,S*.45,0.3, 0,5,12,.7);
+
+  // ── TEAL NEBULA CORE LIGHT — the big glowing region ──────
+  blob(S*.5,S*.46,S*.55,S*.38,.15, 0,155,140,.55);
+  blob(S*.5,S*.46,S*.42,S*.28,.15, 0,185,165,.48);
+  blob(S*.48,S*.44,S*.32,S*.22,.1, 20,200,180,.40);
+  // Extra teal spread top-right
+  blob(S*.62,S*.32,S*.28,S*.18,-.3, 0,180,160,.30);
+  blob(S*.38,S*.58,S*.25,S*.16, .4, 0,160,145,.28);
+
+  // ── LARGE WHITE-GREY CLOUD PUFFS — left side ─────────────
+  // Big bright cloud bottom-left
+  blob(S*.22,S*.72,S*.28,S*.20, .5, 200,215,222,.62);
+  blob(S*.18,S*.68,S*.22,S*.16, .4, 220,228,232,.55);
+  blob(S*.26,S*.78,S*.20,S*.14, .6, 185,200,208,.48);
+  // Smaller cloud wisps left
+  blob(S*.12,S*.58,S*.14,S*.10, .2, 160,180,192,.42);
+  blob(S*.08,S*.50,S*.10,S*.08,-.1, 140,165,178,.35);
+  // Cloud upper-left
+  blob(S*.15,S*.28,S*.18,S*.12,-.4, 195,210,218,.45);
+  blob(S*.10,S*.22,S*.14,S*.09,-.5, 170,188,200,.38);
+
+  // ── WHITE-GREY CLOUD PUFFS — right/bottom ────────────────
+  // Bottom cloud
+  blob(S*.52,S*.88,S*.32,S*.15, .1, 185,200,210,.52);
+  blob(S*.58,S*.92,S*.22,S*.12, .2, 165,185,195,.44);
+  blob(S*.42,S*.85,S*.18,S*.11,-.1, 155,175,185,.40);
+  // Top-right wisp
+  blob(S*.78,S*.22,S*.16,S*.10,-.6, 170,190,200,.38);
+  blob(S*.84,S*.28,S*.12,S*.08,-.5, 150,175,188,.32);
+  // Right side small clouds
+  blob(S*.88,S*.48,S*.12,S*.09, .3, 155,175,185,.35);
+  blob(S*.82,S*.58,S*.10,S*.08, .4, 145,168,180,.30);
+
+  // ── TEAL SPIRAL ARMS — the swirling structure ─────────────
+  // Draw spiral arm using many small blobs along a spiral path
+  for(let i=0;i<60;i++){
+    const t=i/59;
+    const ang=t*Math.PI*2.2-.8;
+    const r=S*(.08+t*.28);
+    const cx=S*.5+Math.cos(ang)*r,cy=S*.46+Math.sin(ang)*r*.7;
+    const sz=S*(.025+t*.018);
+    const bright=1-t*.6;
+    blob(cx,cy,sz*1.3,sz,ang+Math.PI/2, ~~(20*bright),~~(190*bright),~~(170*bright), .18+t*.08);
+  }
+  // Second arm offset
+  for(let i=0;i<45;i++){
+    const t=i/44;
+    const ang=t*Math.PI*1.8+Math.PI-.5;
+    const r=S*(.06+t*.22);
+    const cx=S*.5+Math.cos(ang)*r,cy=S*.46+Math.sin(ang)*r*.65;
+    const sz=S*(.018+t*.012);
+    const bright=1-t*.7;
+    blob(cx,cy,sz*1.2,sz,ang+Math.PI/2, ~~(10*bright),~~(165*bright),~~(145*bright), .14+t*.06);
+  }
+
+  // ── BRIGHT TEAL-WHITE CORE ───────────────────────────────
+  blob(S*.5,S*.46,S*.12,S*.10, 0, 180,245,235,.88);
+  blob(S*.5,S*.46,S*.06,S*.05, 0, 240,255,252,.95);
+  // Central point star
+  const star=ctx.createRadialGradient(S*.5,S*.46,0,S*.5,S*.46,S*.04);
+  star.addColorStop(0,'rgba(255,255,255,1)');
+  star.addColorStop(.15,'rgba(220,250,248,.85)');
+  star.addColorStop(.5,'rgba(100,230,220,.35)');
+  star.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.fillStyle=star;ctx.fillRect(0,0,S,S);
+
+  // ── BRIGHT STAR SPARKLES scattered around ────────────────
+  const sparkles=[
+    [.28,.18,3.5,true],[.72,.14,2.8,true],[.15,.44,2.2,false],
+    [.82,.38,3.0,true],[.64,.72,2.5,false],[.38,.82,2.0,false],
+    [.88,.62,2.2,false],[.12,.72,2.8,true],[.58,.12,2.0,false],
+    [.44,.90,2.5,false],[.76,.82,1.8,false],[.06,.34,2.0,false],
+    [.92,.24,2.2,false],[.35,.05,1.8,false],[.68,.94,2.0,false],
+    [.22,.52,1.5,false],[.78,.52,1.8,false],[.50,.22,1.6,false],
+  ];
+  sparkles.forEach(([fx,fy,r,bright])=>{
+    const sx=fx*S,sy=fy*S;
+    const sg=ctx.createRadialGradient(sx,sy,0,sx,sy,r*4);
+    const col=bright?'255,255,255':'180,240,235';
+    sg.addColorStop(0,`rgba(${col},${bright?.95:.80})`);
+    sg.addColorStop(.25,`rgba(${col},.30)`);
+    sg.addColorStop(1,'rgba(0,0,0,0)');
+    ctx.fillStyle=sg;ctx.fillRect(sx-r*4,sy-r*4,r*8,r*8);
+    // Cross-hair diffraction spike for bright stars
+    if(bright){
+      ctx.strokeStyle=`rgba(200,240,238,.55)`;ctx.lineWidth=.5;
+      ctx.beginPath();ctx.moveTo(sx-r*8,sy);ctx.lineTo(sx+r*8,sy);ctx.stroke();
+      ctx.beginPath();ctx.moveTo(sx,sy-r*8);ctx.lineTo(sx,sy+r*8);ctx.stroke();
+    }
+  });
+
+  // ── VIGNETTE — dark edges fade to pure black ─────────────
+  const vig=ctx.createRadialGradient(S*.5,S*.5,S*.3,S*.5,S*.5,S*.72);
+  vig.addColorStop(0,'rgba(0,0,0,0)');
+  vig.addColorStop(.6,'rgba(0,0,0,.05)');
+  vig.addColorStop(1,'rgba(0,0,0,1)');
+  ctx.fillStyle=vig;ctx.fillRect(0,0,S,S);
+
+  return new THREE.CanvasTexture(cv);
+}
+const nebulaMat=new THREE.SpriteMaterial({map:buildNebulaTex(),transparent:true,opacity:0,depthWrite:false});
+const nebulaSprite=new THREE.Sprite(nebulaMat);
+nebulaSprite.frustumCulled=false;
+SS.add(nebulaSprite);
+
+// ═══════════════════════════════════════════════════════════
+// SHOOTING STARS
+// ═══════════════════════════════════════════════════════════
+const shooters=[];
+function spawnShooter(){
+  if(shooters.length>=12)return;
+  const len=160+Math.random()*400;
+  const gm=new THREE.BufferGeometry(),pp=new Float32Array(6);pp[3]=len;
+  gm.setAttribute('position',new THREE.BufferAttribute(pp,3));
+  const mat=new THREE.LineBasicMaterial({color:[0xffffff,0xaaddff,0xffeeaa][~~(Math.random()*3)],transparent:true,opacity:0});
+  const line=new THREE.Line(gm,mat);
+  const cp=CAM.position;
+  line.position.set(cp.x+(Math.random()-.5)*1800,cp.y+(Math.random()-.5)*600,cp.z-200-Math.random()*800);
+  const th=Math.random()*Math.PI*2,ph=(Math.random()*.38+.05)*(Math.random()>.5?1:-1);
+  line.lookAt(line.position.clone().add(V3(Math.cos(th)*Math.cos(ph),Math.sin(ph),Math.sin(th)*Math.cos(ph))));
+  SS.add(line);shooters.push({line,mat,life:0,maxLife:1+Math.random()*1.8,spd:45+Math.random()*80,dir:V3(Math.cos(th)*Math.cos(ph),Math.sin(ph),Math.sin(th)*Math.cos(ph))});
+}
+
+// ═══════════════════════════════════════════════════════════
+// ██ SURFACE SCENE — astronaut POV like the reference image
+// Low camera, terrain stretching to horizon, space sky above
+// ═══════════════════════════════════════════════════════════
+const SURF=new THREE.Scene();
+
+// Dense star sky — same as space
+// SURF stars removed (surface mode disabled)
+
+
+// ── Sun in surface sky ──────────────────────────────────────────────────────
+const sSunMesh=new THREE.Mesh(new THREE.SphereGeometry(1.4,16,16),new THREE.MeshBasicMaterial({color:0xfff9cc}));
+sSunMesh.position.set(900,350,-1200);SURF.add(sSunMesh);
+sSunMesh.add(new THREE.Mesh(new THREE.SphereGeometry(2.6,16,16),new THREE.MeshBasicMaterial({color:0xffcc44,transparent:true,opacity:.09,side:THREE.BackSide})));
+
+// ── Surface lighting: sharp side-light like sun on airless body ─────────────
+const sDir=new THREE.DirectionalLight(0xfff4e0,2.8);
+sDir.position.set(1,.55,-.35);
+sDir.castShadow=true;
+sDir.shadow.mapSize.set(2048,2048);
+sDir.shadow.camera.left=-350;sDir.shadow.camera.right=350;
+sDir.shadow.camera.top=350;sDir.shadow.camera.bottom=-350;
+sDir.shadow.camera.near=.05;sDir.shadow.camera.far=700;
+SURF.add(sDir);
+// Very faint fill light (bounced from ground)
+SURF.add(new THREE.AmbientLight(0x08101e,.30));
+
+// ── Planet visible in surface sky (large, beautiful) ───────────────────────
+let skyPlanetMesh=null,skyPlanetAngle=0;
+function setSkyPlanet(def,neighbourDef){
+  if(skyPlanetMesh)SURF.remove(skyPlanetMesh);
+  const td=neighbourDef||def;
+  // Large planet sphere — radius 55, positioned high-left in sky
+  skyPlanetMesh=new THREE.Mesh(new THREE.SphereGeometry(55,64,64),
+    new THREE.MeshPhongMaterial({map:td.tex||null,shininess:5,specular:new THREE.Color(.02,.02,.03)}));
+  // Upper left of sky — partially cropped by top of screen like the reference image
+  skyPlanetMesh.position.set(-85,130,-280);
+  skyPlanetAngle=0;
+  if(td.atmo){
+    [[1.05,.13],[1.10,.055],[1.17,.022]].forEach(([s,o])=>
+      skyPlanetMesh.add(new THREE.Mesh(new THREE.SphereGeometry(55*s,32,32),
+        new THREE.MeshBasicMaterial({color:td.atmo,transparent:true,opacity:o,side:THREE.BackSide}))));
+    // Colored light cast from planet onto terrain
+    const pLight=new THREE.PointLight(td.atmo,0.35,600);
+    pLight.position.set(-85,130,-280);
+    SURF.add(pLight);
+  }
+  SURF.add(skyPlanetMesh);
+}
+
+// ── Nebula / space atmosphere backdrop per planet ───────────────────────────
+let nebulaMesh=null;
+const NEBULA_COLS={
+  MERCURIO:[0x334455,0x223344],VENERE:[0x553322,0x332211],
+  TERRA:   [0x1a3a5a,0x0d2235],MARTE:  [0x441a0a,0x2a0d05],
+  GIOVE:   [0x553a22,0x332211],SATURNO:[0x443322,0x2a2010],
+  URANO:   [0x1a3a4a,0x0d2230],NETTUNO:[0x0a1535,0x060d22],
+  LUNA:    [0x2a3545,0x1a2535],
+};
+function setNebula(name){
+  if(nebulaMesh)SURF.remove(nebulaMesh);
+  const cols=NEBULA_COLS[name]||[0x1a2535,0x0d1522];
+  const c1=new THREE.Color(cols[0]),c2=new THREE.Color(cols[1]);
+  const nTex=mkC(1024,(ctx,S)=>{
+    ctx.clearRect(0,0,S,S);
+    // Base deep space gradient
+    const bg=ctx.createLinearGradient(0,S,0,0);
+    bg.addColorStop(0,`rgba(0,0,0,0)`);
+    bg.addColorStop(.35,`rgba(${~~(c2.r*60)},${~~(c2.g*60)},${~~(c2.b*80)},0.15)`);
+    bg.addColorStop(1,`rgba(${~~(c1.r*100)},${~~(c1.g*100)},${~~(c1.b*120)},0.35)`);
+    ctx.fillStyle=bg;ctx.fillRect(0,0,S,S);
+    // Nebula clouds
+    for(let i=0;i<14;i++){
+      const cx=Math.random()*S,cy=Math.random()*S*.65,r=60+Math.random()*200;
+      const mix=Math.random()>.5?c1:c2;
+      const grd=ctx.createRadialGradient(cx,cy,0,cx,cy,r);
+      grd.addColorStop(0,`rgba(${~~(mix.r*180)},${~~(mix.g*200)},${~~(mix.b*220)},${.04+Math.random()*.08})`);
+      grd.addColorStop(.5,`rgba(${~~(mix.r*120)},${~~(mix.g*140)},${~~(mix.b*160)},${.02+Math.random()*.04})`);
+      grd.addColorStop(1,'rgba(0,0,0,0)');
+      ctx.fillStyle=grd;ctx.fillRect(0,0,S,S);
+    }
+    // Bright star clusters
+    for(let i=0;i<6;i++){
+      const sx=Math.random()*S,sy=Math.random()*S*.5;
+      const gr=ctx.createRadialGradient(sx,sy,0,sx,sy,8+Math.random()*25);
+      gr.addColorStop(0,'rgba(255,255,255,0.55)');
+      gr.addColorStop(.3,'rgba(220,235,255,0.15)');
+      gr.addColorStop(1,'rgba(0,0,0,0)');
+      ctx.fillStyle=gr;ctx.fillRect(0,0,S,S);
+    }
+  });
+  // Curved hemisphere dome covering top half of sky
+  nebulaMesh=new THREE.Mesh(
+    new THREE.SphereGeometry(1800,32,16,0,Math.PI*2,0,Math.PI*.45),
+    new THREE.MeshBasicMaterial({map:nTex,transparent:true,opacity:.9,depthWrite:false,side:THREE.BackSide})
+  );
+  nebulaMesh.position.y=-200;
+  SURF.add(nebulaMesh);
+}
+
+// ── Surface palettes per planet ──────────────────────────────────────────────
+// [dark,  mid,   light] — R,G,B 0-1 — matches planet surface colour
+const PAL={
+  MERCURIO:[[.38,.36,.32],[.52,.50,.46],[.64,.62,.57]],
+  VENERE:  [[.45,.35,.12],[.60,.48,.18],[.72,.60,.24]],
+  TERRA:   [[.08,.30,.08],[.14,.42,.11],[.18,.52,.14]],
+  MARTE:   [[.42,.13,.03],[.62,.22,.07],[.75,.30,.10]],
+  GIOVE:   [[.60,.46,.28],[.76,.62,.40],[.88,.72,.50]],
+  SATURNO: [[.58,.48,.28],[.74,.62,.40],[.86,.73,.50]],
+  URANO:   [[.28,.52,.62],[.40,.68,.78],[.52,.80,.88]],
+  NETTUNO: [[.05,.14,.42],[.10,.22,.60],[.14,.28,.75]],
+  LUNA:    [[.32,.31,.28],[.50,.48,.44],[.62,.60,.55]],
+};
+const PALD=[[.32,.30,.27],[.48,.46,.42],[.60,.58,.53]];
+
+// Surface height function (used both for geometry and getH)
+function surfH(nx,nz,s){
+  let h=fbm(nx,nz,7,s)*22;
+  h+=fbm(nx*9,nz*9,4,s+50)*4;
+  h-=Math.max(0,(fbm(nx*2.5,nz*2.5,3,s+100)-.53)*10)*8; // craters as negative gaussians
+  return h;
+}
+function getH(x,z){
+  if(!SURF_DEF)return 0;
+  return surfH(x*.0055,z*.0055,SURF_DEF.seed||1);
+}
+
+let TERR_MESH=null,SURF_DEF=null;
+
+function mkTerrain(def){
+  if(TERR_MESH){SURF.remove(TERR_MESH);TERR_MESH.geometry.dispose();}
+  SURF.children.filter(c=>c.userData.prop).forEach(c=>SURF.remove(c));
+  SURF_DEF=def;
+  const pal=PAL[def.name]||PALD;
+  const s=def.seed||1;
+  const W=800,RES=150; // wide terrain, high res
+  const geo=new THREE.PlaneGeometry(W,W,RES,RES);
+  const pa=geo.attributes.position,vc=new Float32Array(pa.count*3);
+
+  for(let i=0;i<pa.count;i++){
+    const x=pa.getX(i),z=pa.getZ(i),nx=x*.0055,nz=z*.0055;
+    const h=surfH(nx,nz,s);
+    pa.setY(i,h);
+    // colour = blend dark→light by height, with fine variation
+    const t=Math.max(0,Math.min(1,(h+3)/20));
+    const noise=h21(nx*18,nz*18,s)*.08-.04;
+    vc[i*3]=Math.max(0,pal[0][0]*(1-t)+pal[2][0]*t+noise);
+    vc[i*3+1]=Math.max(0,pal[0][1]*(1-t)+pal[2][1]*t+noise*.8);
+    vc[i*3+2]=Math.max(0,pal[0][2]*(1-t)+pal[2][2]*t+noise*.6);
+  }
+  pa.needsUpdate=true;
+  geo.setAttribute('color',new THREE.BufferAttribute(vc,3));
+  geo.computeVertexNormals();
+
+  // Detail texture: fine grain + crater rings
+  const gtex=mkC(2048,(ctx,S)=>{
+    const [p0,p1,p2]=pal;
+    ctx.fillStyle=`rgb(${~~(p1[0]*200)},${~~(p1[1]*196)},${~~(p1[2]*186)})`;
+    ctx.fillRect(0,0,S,S);
+    // Grain
+    for(let px=0;px<S;px+=1)for(let py=0;py<S;py+=1){
+      const n=h21(px/S*32,py/S*32,s);
+      if(n>.62||n<.12){
+        const a=(n>.62?(n-.62)/.38:(0.12-n)/.12)*.18;
+        ctx.fillStyle=`rgba(${n>.5?255:0},${n>.5?255:0},${n>.5?255:0},${a})`;
+        ctx.fillRect(px,py,1,1);
+      }
+    }
+    // Crater rings — very prominent on rocky planets
+    const nc=(['MERCURIO','LUNA'].includes(def.name))?110:55;
+    for(let i=0;i<nc;i++){
+      const cx=Math.random()*S,cy=Math.random()*S,cr=3+Math.random()*60;
+      // Raised rim (bright)
+      ctx.strokeStyle=`rgba(${~~(p2[0]*230)},${~~(p2[1]*224)},${~~(p2[2]*210)},${.15+Math.random()*.2})`;
+      ctx.lineWidth=Math.max(1,cr*.06);
+      ctx.beginPath();ctx.arc(cx,cy,cr,0,Math.PI*2);ctx.stroke();
+      // Dark interior
+      const gi=ctx.createRadialGradient(cx,cy,0,cx,cy,cr*.88);
+      gi.addColorStop(0,`rgba(${~~(p0[0]*100)},${~~(p0[1]*96)},${~~(p0[2]*90)},${.16+Math.random()*.14})`);
+      gi.addColorStop(1,'rgba(0,0,0,0)');
+      ctx.fillStyle=gi;ctx.beginPath();ctx.arc(cx,cy,cr*.88,0,Math.PI*2);ctx.fill();
+    }
+  });
+
+  TERR_MESH=new THREE.Mesh(geo,new THREE.MeshPhongMaterial({
+    vertexColors:true,map:gtex,shininess:1,
+    specular:new THREE.Color(.008,.008,.008),
+    bumpMap:gtex,bumpScale:.4
+  }));
+  TERR_MESH.rotation.x=-Math.PI/2;
+  TERR_MESH.receiveShadow=true;
+  SURF.add(TERR_MESH);
+
+  // ── Rocks: cluster near camera, thin out in distance ─────────────────────
+  const rk=pal[2];
+  const darkRk=pal[0];
+  // Place more rocks close to spawn, fewer far away
+  const rockDist=[
+    // [count, radiusMin, radiusMax, sizeMin, sizeMax]
+    [12,  1,  15, .4, 3.5],  // close — big feature rocks
+    [25,  15, 60, .2, 2.2],  // mid
+    [35,  60, 250,.1, 1.4],  // far — smaller pebbles
+  ];
+  rockDist.forEach(([cnt,rMin,rMax,szMin,szMax])=>{
+    for(let i=0;i<cnt;i++){
+      const angle=Math.random()*Math.PI*2;
+      const dist=rMin+Math.random()*(rMax-rMin);
+      const rx=Math.cos(angle)*dist,rz=Math.sin(angle)*dist-dist*.3; // bias forward
+      const sz=szMin+Math.random()*(szMax-szMin);
+      const rnd=Math.random();
+      let rm;
+      if(rnd<.6){
+        // Irregular boulder
+        rm=new THREE.Mesh(new THREE.IcosahedronGeometry(sz,~~(Math.random()*2)),
+          new THREE.MeshPhongMaterial({color:new THREE.Color(...(Math.random()>.5?rk:darkRk)),shininess:2}));
+        rm.scale.set(.7+Math.random()*.8,Math.random()*.6+.35,.7+Math.random()*.8);
+      }else{
+        // Flat slab
+        rm=new THREE.Mesh(new THREE.BoxGeometry(sz*1.4,sz*.4,sz*(0.8+Math.random()*.6)),
+          new THREE.MeshPhongMaterial({color:new THREE.Color(...rk),shininess:1}));
+      }
+      const h=getH(rx,rz);
+      rm.position.set(rx,Math.max(0,h)+sz*.18,rz);
+      rm.rotation.set((Math.random()-.5)*.28,Math.random()*Math.PI*2,(Math.random()-.5)*.18);
+      rm.castShadow=true;rm.receiveShadow=true;rm.userData.prop=true;
+      SURF.add(rm);
+    }
+  });
+}
+
+// ═══════════════════════════════════════════════════════════
+// GAME STATE
+// ═══════════════════════════════════════════════════════════
+let MODE='space',activeScene=SS,nearPlanet=null;
+let sYaw=0,sPitch=0,tYaw=0,tPitch=0;
+const sVel=V3();
+let bob=0,bobH=0;
+
+const spdEl=document.getElementById('spd'),spdVal=document.getElementById('spd-val');
+let SPD=8;
+spdEl.addEventListener('input',()=>{SPD=+spdEl.value;spdVal.textContent='x'+SPD;});
+spdEl.addEventListener('mousedown',e=>e.stopPropagation());
+
+const K={};
+document.addEventListener('keydown',e=>{K[e.key.toLowerCase()]=true;});
+document.addEventListener('keyup',e=>K[e.key.toLowerCase()]=false);
+document.addEventListener('mousemove',e=>{
+  if(document.pointerLockElement!==R.domElement)return;
+  tYaw-=e.movementX*.0015;tPitch-=e.movementY*.0015;tPitch=Math.max(-Math.PI/2.05,Math.min(Math.PI/2.05,tPitch));
+});
+R.domElement.addEventListener('click',()=>R.domElement.requestPointerLock?.());
+
+const pmEl=document.getElementById('pmsg');
+function setP(m){if(!m){pmEl.classList.remove('on');return;}pmEl.textContent=m;pmEl.classList.add('on');}
+
+// ─── Zone fade state for smooth HUD transitions ────────────────────────────
+const ZONES=['SISTEMA SOLARE','VIA LATTEA','SPAZIO PROFONDO','UNIVERSO VICINO','GRUPPO DI GALASSIE','UNIVERSO OSSERVABILE'];
+let currentZone='',zoneTarget='',zoneFading=false;
+const zoneFlash=document.getElementById('zone-flash');
+function setZone(z){
+  if(z===currentZone)return;
+  zoneTarget=z;
+  if(!zoneFading){
+    zoneFading=true;
+    const ln=document.getElementById('loc-name');
+    // Fade out the name
+    ln.style.transition='opacity .4s';ln.style.opacity='0';
+    // Subtle black flash on the scene
+    zoneFlash.style.transition='opacity .25s';zoneFlash.style.opacity='0.35';
+    setTimeout(()=>{
+      currentZone=zoneTarget;
+      ln.textContent=currentZone;
+      ln.style.opacity='1';
+      zoneFlash.style.transition='opacity .6s';zoneFlash.style.opacity='0';
+      zoneFading=false;
+    },400);
+  }
+}
+
+// ─── Proximity ────────────────────────────────────────────────────────────
+function checkProx(){
+  const cp=CAM.position,dist=cp.length();
+
+  // MW fade — visible when inside it, stays faint even from far
+  const mwIn=Math.max(0,Math.min(1,(dist-5000)/25000));
+  const mwOut=Math.max(0.10,1-(dist-800000)/1200000);
+  MW.setOpacity(Math.min(mwIn,mwOut));
+
+  // 7 main galaxies: fade in from 100k AU, never fade out
+  const galFade=Math.max(0,Math.min(1,(dist-100000)/400000));
+  galObjs.forEach(go=>{ go.mat.opacity=galFade*.88; });
+
+  // Distant galaxy field — each shell fades in at its own distance
+  distGalObjs.forEach(dg=>{
+    const t=Math.max(0,Math.min(1,(dist-dg.startD)/(dg.fullD-dg.startD)));
+    dg.obj.mat.opacity+=(t*.82-dg.obj.mat.opacity)*.03;
+  });
+
+  // Larger far background stars — fade in from Spazio Profondo
+  const farStarOp=Math.max(0,Math.min(.70,(dist-10e6)/20e6));
+  skyMatFar.opacity+=(farStarOp-skyMatFar.opacity)*.04;
+
+  // Universe shells — camera-relative galaxy dots
+  updateUniv(dist);
+
+  // ── Planet proximity — show name when close ───────────────
+  const allPlanets=[...solObjs,{mesh:moonMesh,def:{name:'LUNA',r:22}},{mesh:sunMesh,def:{name:'SOLE',r:180}}];
+  let nearest=null,nearestDist=Infinity;
+  allPlanets.forEach(p=>{
+    const wp=p.mesh.getWorldPosition(V3());
+    const d=cp.distanceTo(wp);
+    if(d<nearestDist){nearestDist=d;nearest=p;}
+  });
+  if(nearest&&nearestDist<nearest.def.r*18){
+    setP('✦  '+nearest.def.name);
+  } else {
+    setP('');
+  }
+
+  // HUD zone
+  let nearG=null,ngd=Infinity;
+  galObjs.forEach(go=>{const d=cp.distanceTo(go.grp.position);if(d<ngd){ngd=d;nearG=go;}});
+  const ls=document.getElementById('loc-sub');
+  if(nearG&&ngd<GAL_R*5){
+    setZone(nearG.gd.name);ls.textContent='galassia';
+  } else if(dist<5000){
+    setZone('SISTEMA SOLARE');ls.textContent=(dist/100).toFixed(1)+' AU';
+  } else if(dist<300000){
+    setZone('VIA LATTEA');ls.textContent=(dist/1000).toFixed(0)+'k AU';
+  } else if(dist<14e6){
+    setZone('SPAZIO PROFONDO');ls.textContent=(dist/1000).toFixed(0)+'k AU';
+  } else if(dist<90e6){
+    setZone('UNIVERSO VICINO');ls.textContent=(dist/1e6).toFixed(1)+'M AU';
+  } else if(dist<380e6){
+    setZone('GRUPPO DI GALASSIE');ls.textContent=(dist/1e6).toFixed(0)+'M AU';
+  } else {
+    setZone('UNIVERSO OSSERVABILE');ls.textContent=(dist/1e6).toFixed(0)+'M AU';
+  }
+  if(!currentZone&&!zoneFading){
+    document.getElementById('loc-name').textContent=zoneTarget||'SISTEMA SOLARE';
+    currentZone=zoneTarget||'SISTEMA SOLARE';
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// MAIN LOOP
+// ═══════════════════════════════════════════════════════════
+let lastT=performance.now(),shootT=0,started=false;
+
+function loop(){
+  requestAnimationFrame(loop);
+  if(!started){R.render(SS,CAM);return;}
+  const now=performance.now(),dt=Math.min((now-lastT)/1000,.05);lastT=now;
+
+  // Camera rotation
+    sYaw+=(tYaw-sYaw)*.1;sPitch+=(tPitch-sPitch)*.1;
+    CAM.quaternion.copy(Q().setFromAxisAngle(V3(0,1,0),sYaw)).multiply(Q().setFromAxisAngle(V3(1,0,0),sPitch));
+
+    // Movement
+    const fwd=V3(0,0,-1).applyQuaternion(CAM.quaternion),rgt=V3(1,0,0).applyQuaternion(CAM.quaternion);
+    const acc=V3(),sp=SPD*(1+CAM.position.length()/35000);
+    if(K['w'])acc.add(fwd.clone().multiplyScalar(sp));if(K['s'])acc.add(fwd.clone().multiplyScalar(-sp));
+    if(K['a'])acc.add(rgt.clone().multiplyScalar(-sp));if(K['d'])acc.add(rgt.clone().multiplyScalar(sp));
+    sVel.add(acc);sVel.multiplyScalar(.935);
+    CAM.position.add(sVel.clone().multiplyScalar(dt*60));
+    bob+=dt*.32;CAM.position.y+=Math.sin(bob)*.008;
+
+    // Solar orbits (Keplerian)
+    solObjs.forEach(p=>{
+      const ud=p.mesh.userData;ud.ang+=ud.os*SPD*dt*60;
+      p.mesh.position.set(Math.cos(ud.ang)*ud.dist,0,Math.sin(ud.ang)*ud.dist);
+      p.mesh.rotation.y+=ud.rs*dt*60;
+      if(p.mesh.userData.cloud)p.mesh.userData.cloud.rotation.y+=.0003*SPD*dt*60;
+    });
+    // Moon
+    moonAng+=.015*SPD*dt*60;
+    const ep=solObjs[2].mesh.position;
+    moonMesh.position.set(ep.x+Math.cos(moonAng)*280,ep.y+Math.sin(moonAng*.3)*22,ep.z+Math.sin(moonAng)*280);
+
+    // Galaxy planet orbits
+    galObjs.forEach(go=>{
+      go.grp.rotation.y+=.00004*dt*60;
+      go.galPlanets.forEach(p=>{
+        p.mesh.userData.oA+=p.mesh.userData.oS*SPD*dt*60;
+        const a=p.mesh.userData.oA,or=p.mesh.userData.orR;
+        p.mesh.position.set(Math.cos(a)*or,0,Math.sin(a)*or);
+        p.mesh.rotation.y+=p.mesh.userData.rS*dt*60;
+      });
+    });
+
+    sunPt.intensity=4+Math.sin(now*.001*.5)*.5;
+
+    // Shooters
+    shootT+=dt;if(shootT>.5){shootT=0;spawnShooter();}
+    for(let i=shooters.length-1;i>=0;i--){
+      const s=shooters[i];s.life+=dt;
+      const prg=s.life/s.maxLife,f=prg<.15?prg/.15:prg>.75?1-(prg-.75)/.25:1;
+      s.mat.opacity=f*.92;s.line.position.add(s.dir.clone().multiplyScalar(s.spd*dt*60*.016));
+      if(s.life>=s.maxLife){SS.remove(s.line);s.line.geometry.dispose();s.mat.dispose();shooters.splice(i,1);}
+    }
+    checkProx();
+
+  R.render(SS,CAM);
+}
+
+// ═══════════════════════════════════════════════════════════
+// START
+// ═══════════════════════════════════════════════════════════
+loop();
+document.getElementById('go').addEventListener('click',()=>{
+  const intro=document.getElementById('intro');
+  intro.style.transition='opacity 1.8s';intro.style.opacity='0';
+  setTimeout(()=>intro.style.display='none',1800);
+  started=true;lastT=performance.now();
+  CAM.position.set(2800,280,-1200);
+  setTimeout(()=>R.domElement.requestPointerLock?.(),500);
+});
+window.addEventListener('resize',()=>{CAM.aspect=innerWidth/innerHeight;CAM.updateProjectionMatrix();R.setSize(innerWidth,innerHeight);});
+</script>
+</body>
+</html>

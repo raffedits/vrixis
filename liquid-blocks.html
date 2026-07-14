@@ -1,0 +1,1459 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Lumina Block Blast</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
+    <script>
+      // Fallback: se jsdelivr fallisce, prova unpkg
+      window.addEventListener('DOMContentLoaded', () => {
+        if (typeof Peer === 'undefined') {
+          const s = document.createElement('script');
+          s.src = 'https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js';
+          document.head.appendChild(s);
+        }
+      });
+    </script>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <style>
+      body {
+        font-family: 'Outfit', sans-serif;
+        background-color: #020617;
+        color: white;
+        overflow: hidden;
+        touch-action: none;
+        margin: 0;
+        padding: 0;
+      }
+      
+      .glass-panel {
+        background: rgba(255, 255, 255, 0.03);
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        box-shadow: 
+          0 20px 40px rgba(0, 0, 0, 0.4),
+          inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+      }
+      
+      .glass-btn {
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.05) 100%);
+        backdrop-filter: blur(10px);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        box-shadow: 
+          0 4px 6px rgba(0,0,0,0.1),
+          inset 0 1px 0 rgba(255,255,255,0.2);
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      }
+      
+      .glass-btn:hover {
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.2) 0%, rgba(255, 255, 255, 0.1) 100%);
+        box-shadow: 0 0 20px rgba(255, 255, 255, 0.3);
+        transform: translateY(-2px);
+        border-color: rgba(255,255,255,0.5);
+      }
+
+      .liquid-block {
+        position: relative;
+        border-radius: 12px;
+        box-shadow: 
+          inset 0 2px 3px rgba(255,255,255,0.9),
+          inset 0 -4px 6px rgba(0,0,0,0.4),
+          inset 0 0 0 1px rgba(255,255,255,0.15),
+          0 6px 12px rgba(0,0,0,0.3);
+        z-index: 10;
+        transition: transform 0.1s;
+        will-change: transform;
+        transform: translateZ(0);
+      }
+
+      .liquid-block::after {
+        content: '';
+        position: absolute;
+        top: 5%;
+        left: 8%;
+        right: 8%;
+        height: 35%;
+        background: linear-gradient(180deg, rgba(255,255,255,0.9) 0%, rgba(255,255,255,0.1) 100%);
+        border-radius: 6px;
+        opacity: 0.95;
+        filter: blur(0.5px);
+        pointer-events: none;
+      }
+      
+      .liquid-block::before {
+        content: '';
+        position: absolute;
+        bottom: 10%;
+        left: 15%;
+        right: 15%;
+        height: 20%;
+        background: radial-gradient(ellipse at center, rgba(255,255,255,0.6) 0%, transparent 70%);
+        border-radius: 100%;
+        opacity: 0.7;
+        mix-blend-mode: overlay;
+        pointer-events: none;
+      }
+
+      @keyframes popIn {
+        0% { transform: scale(0); opacity: 0; }
+        60% { transform: scale(1.15); opacity: 1; }
+        100% { transform: scale(1); opacity: 1; }
+      }
+
+      @keyframes clearFlash {
+        0% { transform: scale(1); filter: brightness(1.5); }
+        40% { transform: scale(1.2); filter: brightness(4) drop-shadow(0 0 15px white); opacity: 1; }
+        100% { transform: scale(0); opacity: 0; }
+      }
+      
+      @keyframes shake {
+        0%, 100% { transform: translateX(0); }
+        25% { transform: translateX(-3px) rotate(-2deg); }
+        75% { transform: translateX(3px) rotate(2deg); }
+      }
+
+      @keyframes subtleShake {
+        0%, 100% { transform: scale(1); }
+        25% { transform: scale(1.03) translateX(-1px); }
+        50% { transform: scale(1.05); }
+        75% { transform: scale(1.03) translateX(1px); }
+      }
+
+      @keyframes float {
+        0%, 100% { transform: translate(0, 0); }
+        50% { transform: translate(-30px, -20px); }
+      }
+      
+      @keyframes assembleUp {
+        0% { opacity: 0; transform: translateY(50px) scale(0.5); }
+        100% { opacity: 1; transform: translateY(0) scale(1); }
+      }
+
+      @keyframes fallDown {
+        0% { transform: translateY(0) rotate(0deg); opacity: 1; }
+        100% { transform: translateY(120vh) rotate(var(--rot)); opacity: 0; }
+      }
+
+      .animate-pop {
+        animation: popIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+      }
+      
+      .animate-clear {
+        animation: clearFlash 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+        z-index: 50;
+      }
+      
+      .animate-shake {
+        animation: shake 0.4s cubic-bezier(.36,.07,.19,.97) both;
+      }
+
+      .animate-subtle-shake {
+        animation: subtleShake 0.3s cubic-bezier(.36,.07,.19,.97) both;
+      }
+      
+      .animate-assemble {
+        animation: assembleUp 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+      }
+      
+      .animate-fall {
+        animation: fallDown 0.8s cubic-bezier(0.6, -0.28, 0.735, 0.045) forwards;
+      }
+
+      .floating-bg {
+        animation: float 15s ease-in-out infinite;
+      }
+      
+      .ghost-block {
+        background: rgba(255, 255, 255, 0.1);
+        border: 1.5px solid rgba(255, 255, 255, 0.6);
+        box-shadow: 
+          0 0 15px rgba(255, 255, 255, 0.2),
+          inset 0 0 10px rgba(255, 255, 255, 0.1);
+        border-radius: 10px;
+        backdrop-filter: blur(2px);
+      }
+
+      .hidden {
+        display: none !important;
+      }
+
+      .mp-modal-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 100;
+        background: rgba(2, 6, 23, 0.85);
+        backdrop-filter: blur(8px);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 16px;
+      }
+
+      .mp-input {
+        background: rgba(255,255,255,0.06);
+        border: 1px solid rgba(255,255,255,0.15);
+        border-radius: 12px;
+        padding: 12px 14px;
+        color: white;
+        font-family: 'Outfit', sans-serif;
+        outline: none;
+        width: 100%;
+        text-align: center;
+        letter-spacing: 0.05em;
+      }
+      .mp-input:focus {
+        border-color: rgba(103, 232, 249, 0.6);
+        box-shadow: 0 0 0 3px rgba(103, 232, 249, 0.15);
+      }
+      .mp-input::placeholder {
+        color: rgba(255,255,255,0.35);
+      }
+
+      .mp-code-display {
+        font-family: 'Outfit', sans-serif;
+        font-weight: 800;
+        font-size: 2.4rem;
+        letter-spacing: 0.25em;
+        background: linear-gradient(135deg, #67e8f9, #a5b4fc);
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+      }
+
+      #battleRow {
+        display: flex;
+        gap: 20px;
+        align-items: flex-start;
+        justify-content: center;
+        flex-wrap: wrap;
+      }
+
+      .board-col {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .player-tag {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 14px;
+        border-radius: 999px;
+      }
+
+      .mini-block {
+        border-radius: 4px;
+        box-shadow: inset 0 1px 2px rgba(255,255,255,0.5), inset 0 -2px 3px rgba(0,0,0,0.4);
+      }
+
+      #opponentPanel .glass-panel {
+        opacity: 0.9;
+      }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="module">
+      // === CONSTANTS & TYPES ===
+      const GRID_SIZE = 8;
+      const CELL_SIZE_DESKTOP = 42;
+      const GAP = 5;
+      const TOUCH_OFFSET_Y = 100;
+
+      const THEME_COLORS = [
+        'from-cyan-300 via-cyan-400 to-blue-500',
+        'from-fuchsia-300 via-purple-400 to-indigo-500',
+        'from-rose-300 via-pink-500 to-red-500',
+        'from-yellow-200 via-amber-400 to-orange-500',
+        'from-emerald-300 via-emerald-400 to-teal-500',
+        'from-indigo-300 via-indigo-400 to-violet-500',
+        'from-blue-300 via-blue-500 to-indigo-600',
+        'from-lime-300 via-lime-500 to-green-600',
+      ];
+
+      const SHAPES = [
+        { matrix: [[1]] },
+        { matrix: [[1, 1]] },
+        { matrix: [[1], [1]] },
+        { matrix: [[1, 1, 1]] },
+        { matrix: [[1], [1], [1]] },
+        { matrix: [[1, 1, 1, 1]] },
+        { matrix: [[1], [1], [1], [1]] },
+        { matrix: [[1, 1, 1, 1, 1]] },
+        { matrix: [[1], [1], [1], [1], [1]] },
+        { matrix: [[1, 1], [1, 1]] },
+        { matrix: [[1, 1, 1], [1, 1, 1], [1, 1, 1]] },
+        { matrix: [[1, 0], [1, 0], [1, 1]] },
+        { matrix: [[0, 1], [0, 1], [1, 1]] },
+        { matrix: [[1, 1, 1], [1, 0, 0]] },
+        { matrix: [[1, 0, 0], [1, 1, 1]] },
+        { matrix: [[1, 1], [1, 0], [1, 0]] },
+        { matrix: [[1, 1], [0, 1], [0, 1]] },
+        { matrix: [[0, 0, 1], [1, 1, 1]] },
+        { matrix: [[1, 1, 1], [0, 0, 1]] },
+        { matrix: [[1, 1], [1, 0]] },
+        { matrix: [[1, 1], [0, 1]] },
+        { matrix: [[1, 0], [1, 1]] },
+        { matrix: [[0, 1], [1, 1]] },
+        { matrix: [[1, 1, 1], [0, 1, 0]] },
+        { matrix: [[0, 1, 0], [1, 1, 1]] },
+        { matrix: [[1, 0], [1, 1], [1, 0]] },
+        { matrix: [[0, 1], [1, 1], [0, 1]] },
+        { matrix: [[1, 1, 0], [0, 1, 1]] },
+        { matrix: [[0, 1, 1], [1, 1, 0]] },
+        { matrix: [[0, 1], [1, 1], [1, 0]] },
+        { matrix: [[1, 0], [1, 1], [0, 1]] },
+        { matrix: [[1, 0], [0, 1]] },
+        { matrix: [[0, 1], [1, 0]] },
+        { matrix: [[1, 0, 0], [0, 1, 0], [0, 0, 1]] },
+        { matrix: [[0, 0, 1], [0, 1, 0], [1, 0, 0]] },
+        { matrix: [[0, 1, 0], [1, 1, 1], [0, 1, 0]] },
+        { matrix: [[1, 0, 1], [1, 1, 1]] },
+      ];
+
+      const LETTERS = {
+        L: [[1,0,0],[1,0,0],[1,0,0],[1,0,0],[1,1,1]],
+        I: [[1],[1],[1],[1],[1]],
+        Q: [[0,1,0],[1,0,1],[1,0,1],[1,1,1],[0,0,1]],
+        U: [[1,0,1],[1,0,1],[1,0,1],[1,0,1],[1,1,1]],
+        D: [[1,1,0],[1,0,1],[1,0,1],[1,0,1],[1,1,0]],
+        B: [[1,1,0],[1,0,1],[1,1,0],[1,0,1],[1,1,0]],
+        O: [[0,1,0],[1,0,1],[1,0,1],[1,0,1],[0,1,0]],
+        C: [[0,1,1],[1,0,0],[1,0,0],[1,0,0],[0,1,1]],
+        K: [[1,0,1],[1,0,1],[1,1,0],[1,0,1],[1,0,1]],
+        S: [[0,1,1],[1,0,0],[0,1,0],[0,0,1],[1,1,0]],
+        G: [[0,1,1],[1,0,0],[1,0,1],[1,0,1],[0,1,1]],
+        A: [[0,1,0],[1,0,1],[1,1,1],[1,0,1],[1,0,1]],
+        M: [[1,0,0,0,1],[1,1,0,1,1],[1,0,1,0,1],[1,0,0,0,1],[1,0,0,0,1]],
+        E: [[1,1,1],[1,0,0],[1,1,1],[1,0,0],[1,1,1]],
+        V: [[1,0,1],[1,0,1],[1,0,1],[1,0,1],[0,1,0]],
+        R: [[1,1,0],[1,0,1],[1,1,0],[1,0,1],[1,0,1]],
+      };
+
+      // === HELPER FUNCTIONS ===
+      function createEmptyGrid() {
+        return Array(GRID_SIZE).fill(null).map(() => 
+          Array(GRID_SIZE).fill(null).map(() => ({ filled: false, color: null }))
+        );
+      }
+
+      function generateId() {
+        return Math.random().toString(36).substr(2, 9);
+      }
+
+      function getRandomShapes(count) {
+        const shapes = [];
+        for (let i = 0; i < count; i++) {
+          const baseShape = SHAPES[Math.floor(Math.random() * SHAPES.length)];
+          const color = THEME_COLORS[Math.floor(Math.random() * THEME_COLORS.length)];
+          shapes.push({
+            id: generateId(),
+            matrix: baseShape.matrix,
+            color: color
+          });
+        }
+        return shapes;
+      }
+
+      function checkCollision(grid, shape, startX, startY) {
+        for (let r = 0; r < shape.matrix.length; r++) {
+          for (let c = 0; c < shape.matrix[r].length; c++) {
+            if (shape.matrix[r][c] === 1) {
+              const x = startX + c;
+              const y = startY + r;
+              
+              if (x < 0 || x >= GRID_SIZE || y < 0 || y >= GRID_SIZE) return true;
+              if (grid[y][x].filled) return true;
+            }
+          }
+        }
+        return false;
+      }
+
+      function canPlaceAnywhere(grid, shape) {
+        for (let y = 0; y < GRID_SIZE; y++) {
+          for (let x = 0; x < GRID_SIZE; x++) {
+            if (!checkCollision(grid, shape, x, y)) return true;
+          }
+        }
+        return false;
+      }
+
+      function findSmartSnapPosition(targetR, targetC, grid, shape) {
+        if (!checkCollision(grid, shape, targetC, targetR)) {
+          return { r: targetR, c: targetC };
+        }
+
+        const neighbors = [
+          { r: targetR + 1, c: targetC },
+          { r: targetR - 1, c: targetC },
+          { r: targetR, c: targetC + 1 },
+          { r: targetR, c: targetC - 1 },
+        ];
+
+        for (const pos of neighbors) {
+          if (!checkCollision(grid, shape, pos.c, pos.r)) {
+            return pos;
+          }
+        }
+
+        return null;
+      }
+
+      // === GAME STATE ===
+      let gameState = 'menu';
+      let grid = createEmptyGrid();
+      let availablePieces = [];
+      let score = 0;
+      let highScore = parseInt(localStorage.getItem('lumina-highscore') || '0');
+      let gameOver = false;
+      let dragPiece = null;
+      let hoverPosition = null;
+      let clearingRows = [];
+      let clearingCols = [];
+      let isShaking = false;
+      let cellSize = CELL_SIZE_DESKTOP;
+      let newlyPlacedCells = new Set(); // Track cells that were just placed
+      let isLeavingTitleScreen = false; // Track title screen exit animation
+
+      // === MULTIPLAYER STATE ===
+      let mpActive = false;       // siamo in una partita multiplayer?
+      let mpUsername = localStorage.getItem('lumina-username') || '';
+      let mpOpponentName = '';
+      let mpPeer = null;
+      let mpConn = null;
+      let mpIsHost = false;
+      let mpRoomCode = '';
+      let mpLastSent = 0;
+
+      // === DOM ELEMENTS ===
+      const root = document.getElementById('root');
+      let gridRef = null;
+
+      // === RENDER FUNCTIONS ===
+      function animateTitleScreenIn(container) {
+        const letterBlocks = container.querySelectorAll('.letter-block');
+        letterBlocks.forEach((block) => {
+          const delay = parseFloat(block.getAttribute('data-delay'));
+          block.style.animation = `assembleUp 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards ${delay}s`;
+        });
+        
+        const startBtn = container.querySelector('#startBtn');
+        if (startBtn) {
+          const type = container.querySelector('#scoreSection') ? 'gameover' : 'start';
+          const btnDelay = type === 'gameover' ? '0.8s' : '1.2s';
+          startBtn.style.animation = `assembleUp 0.8s ease-out ${btnDelay} both`;
+        }
+
+        const mpBtn = container.querySelector('#mpBtn');
+        if (mpBtn) {
+          mpBtn.style.animation = `assembleUp 0.8s ease-out 1.4s both`;
+        }
+        
+        const scoreSection = container.querySelector('#scoreSection');
+        if (scoreSection) {
+          scoreSection.style.animation = 'assembleUp 0.8s ease-out 0.5s both';
+        }
+      }
+
+      function renderTitleScreen(type = 'start', scoreValue = 0) {
+        const word1 = type === 'start' ? ['L', 'I', 'Q', 'U', 'I', 'D'] : ['G', 'A', 'M', 'E'];
+        const word2 = type === 'start' ? ['B', 'L', 'O', 'C', 'K', 'S'] : ['O', 'V', 'E', 'R'];
+        const buttonText = type === 'start' ? 'START' : 'RESTART';
+
+        let html = `
+          <div class="absolute inset-0 flex flex-col items-center justify-center z-50 overflow-hidden bg-black/80 backdrop-blur-xl" id="titleScreenContainer">
+            <div class="scale-[0.6] sm:scale-90 md:scale-100 flex flex-col items-center select-none">
+              <div class="flex gap-4 sm:gap-6 mb-4 sm:mb-6" id="word1">
+                ${word1.map((char, i) => renderLetter(char, i)).join('')}
+              </div>
+              <div class="flex gap-4 sm:gap-6 mb-12 sm:mb-16" id="word2">
+                ${word2.map((char, i) => renderLetter(char, i + 6)).join('')}
+              </div>
+              ${type === 'gameover' ? `
+                <div id="scoreSection" class="mb-12 flex flex-col items-center gap-2" style="opacity: 0">
+                  <span class="text-blue-200 uppercase tracking-[0.3em] text-xs font-bold">Score</span>
+                  <span class="text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-cyan-300 to-indigo-300 drop-shadow-[0_0_10px_rgba(100,200,255,0.4)]">
+                    ${scoreValue}
+                  </span>
+                </div>
+              ` : ''}
+              <button 
+                id="startBtn"
+                class="
+                  relative group text-3xl sm:text-4xl md:text-5xl font-black tracking-[0.15em]
+                  text-transparent bg-clip-text bg-gradient-to-br from-cyan-300 via-white to-indigo-300
+                  drop-shadow-[0_0_15px_rgba(6,182,212,0.5)]
+                  transition-all duration-300
+                  hover:scale-110 hover:drop-shadow-[0_0_35px_rgba(255,255,255,0.8)] hover:tracking-[0.2em]
+                  active:scale-95 active:duration-100 cursor-pointer
+                "
+                style="opacity: 0"
+              >
+                ${buttonText}
+              </button>
+              ${type === 'start' ? `
+                <button
+                  id="mpBtn"
+                  class="mt-6 text-xs sm:text-sm font-bold tracking-[0.2em] text-cyan-200/80 border border-cyan-300/30 rounded-full px-5 py-2 glass-btn hover:text-white"
+                  style="opacity: 0"
+                  data-mp-btn="1"
+                >
+                  MULTIPLAYER
+                </button>
+              ` : ''}
+            </div>
+          </div>
+        `;
+
+        return html;
+      }
+
+      function renderLetter(letterKey, baseIndex) {
+        const matrix = LETTERS[letterKey];
+        if (!matrix) return '';
+
+        let html = '<div class="flex flex-col gap-[4px]">';
+        matrix.forEach((row, r) => {
+          html += '<div class="flex gap-[4px] justify-center">';
+          row.forEach((cell, c) => {
+            if (cell === 0) {
+              html += '<div class="w-3 h-3 sm:w-5 sm:h-5 md:w-6 md:h-6 opacity-0"></div>';
+            } else {
+              const color = THEME_COLORS[(baseIndex + r + c) % THEME_COLORS.length];
+              const delay = (baseIndex * 0.1) + (r * 0.05) + (c * 0.05);
+              
+              // Store delay and rotation as data attributes, apply via class only
+              html += `
+                <div 
+                  class="letter-block w-3 h-3 sm:w-5 sm:h-5 md:w-6 md:h-6 rounded-[2px] sm:rounded-[4px] liquid-block bg-gradient-to-br ${color} shadow-lg"
+                  data-delay="${delay}"
+                  style="opacity: 0"
+                ></div>
+              `;
+            }
+          });
+          html += '</div>';
+        });
+        html += '</div>';
+        return html;
+      }
+
+      function renderBlockShape(shape, cellSizeParam = 20, isGhost = false) {
+        const rows = shape.matrix.length;
+        const cols = shape.matrix[0].length;
+
+        let html = `<div class="grid gap-1" style="grid-template-columns: repeat(${cols}, ${cellSizeParam}px); grid-template-rows: repeat(${rows}, ${cellSizeParam}px);">`;
+        
+        shape.matrix.forEach((row, r) => {
+          row.forEach((cell, c) => {
+            html += '<div class="w-full h-full flex items-center justify-center">';
+            if (cell === 1) {
+              html += `
+                <div 
+                  class="w-full h-full rounded-md ${isGhost ? 'ghost-block' : `liquid-block bg-gradient-to-br ${shape.color}`}"
+                  style="width: 100%; height: 100%"
+                ></div>
+              `;
+            }
+            html += '</div>';
+          });
+        });
+        
+        html += '</div>';
+        return html;
+      }
+
+      function renderGame() {
+        const html = `
+          <div class="min-h-screen w-full bg-[#050b14] text-white flex flex-col items-center justify-center relative overflow-hidden font-outfit">
+            <div class="absolute inset-0 z-0 overflow-hidden pointer-events-none">
+              <div class="absolute top-[-20%] left-[-20%] w-[80%] h-[80%] bg-indigo-600/10 rounded-full blur-[120px] floating-bg"></div>
+              <div class="absolute bottom-[-20%] right-[-20%] w-[80%] h-[80%] bg-cyan-600/10 rounded-full blur-[120px] floating-bg" style="animation-delay: 5s"></div>
+              <div class="absolute top-[40%] left-[40%] w-[40%] h-[40%] bg-pink-600/5 rounded-full blur-[100px] floating-bg" style="animation-delay: 2s"></div>
+            </div>
+
+            <div id="titleScreen"></div>
+            <div id="gameOverScreen"></div>
+            <div id="lobbyLayer"></div>
+
+            <div id="battleRow">
+              <div class="board-col">
+                <div id="myTag" class="player-tag glass-panel hidden">
+                  <span class="w-2 h-2 rounded-full bg-cyan-400 shadow-[0_0_8px_2px_rgba(34,211,238,0.7)]"></span>
+                  <span id="myTagName" class="text-sm font-bold text-cyan-200 tracking-wide">TU</span>
+                </div>
+                <div id="gameContainer" class="z-10 w-full max-w-md p-6 flex flex-col items-center gap-6 animate-[assembleUp_0.8s_ease-out] hidden">
+                  <div class="w-full flex justify-between items-center glass-panel p-5 rounded-2xl border border-white/5">
+                    <div class="flex flex-col">
+                      <div class="flex items-center gap-2 mb-1">
+                        <svg class="w-3.5 h-3.5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"></path></svg>
+                        <span class="text-xs text-cyan-200 uppercase tracking-widest font-bold">Punteggio</span>
+                      </div>
+                      <span id="scoreDisplay" class="text-4xl font-black bg-clip-text text-transparent bg-gradient-to-r from-cyan-300 via-blue-300 to-purple-300 drop-shadow-sm font-outfit">
+                        0
+                      </span>
+                    </div>
+                    <div class="flex flex-col items-end">
+                      <span class="text-xs text-purple-200 uppercase tracking-wider font-bold flex items-center gap-1 mb-1">
+                        <svg class="w-3.5 h-3.5 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z"></path></svg>
+                        Best
+                      </span>
+                      <span id="highScoreDisplay" class="text-2xl font-bold text-white/90">0</span>
+                    </div>
+                  </div>
+
+                  <div id="gridContainer" class="glass-panel p-5 rounded-2xl relative touch-none select-none transition-transform duration-100 border-white/5" style="width: fit-content">
+                    <div id="gameGrid" class="grid"></div>
+                  </div>
+
+                  <div id="piecesContainer" class="w-full h-36 glass-panel rounded-2xl flex items-center justify-around p-4 relative z-20">
+                  </div>
+                </div>
+              </div>
+
+              <div class="board-col hidden" id="opponentPanel">
+                <div class="player-tag glass-panel">
+                  <span class="w-2 h-2 rounded-full bg-fuchsia-400 shadow-[0_0_8px_2px_rgba(232,121,249,0.7)]"></span>
+                  <span id="oppTagName" class="text-sm font-bold text-fuchsia-200 tracking-wide">AVVERSARIO</span>
+                </div>
+                <div class="z-10 w-full max-w-md p-6 flex flex-col items-center gap-4 glass-panel rounded-2xl border border-white/5">
+                  <div class="w-full flex justify-between items-center">
+                    <div class="flex flex-col">
+                      <span class="text-xs text-fuchsia-200 uppercase tracking-widest font-bold mb-1">Punteggio</span>
+                      <span id="oppScoreDisplay" class="text-3xl font-black bg-clip-text text-transparent bg-gradient-to-r from-fuchsia-300 via-purple-300 to-pink-300">0</span>
+                    </div>
+                    <div id="oppStatus" class="text-[10px] uppercase tracking-widest font-bold text-emerald-300">
+                      <span id="oppStatusText">In gioco</span>
+                    </div>
+                  </div>
+                  <div id="oppGridContainer" class="glass-panel p-3 rounded-2xl relative border-white/5" style="width: fit-content">
+                    <div id="oppGameGrid" class="grid"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div id="draggedPiece" class="fixed pointer-events-none z-50 opacity-95 hidden"></div>
+          </div>
+        `;
+
+        root.innerHTML = html;
+        gridRef = document.getElementById('gridContainer');
+      }
+
+      function updateGrid() {
+        const gridEl = document.getElementById('gameGrid');
+        gridEl.style.gridTemplateColumns = `repeat(${GRID_SIZE}, ${cellSize}px)`;
+        gridEl.style.gridTemplateRows = `repeat(${GRID_SIZE}, ${cellSize}px)`;
+        gridEl.style.gap = `${GAP}px`;
+
+        let html = '';
+        grid.forEach((row, r) => {
+          row.forEach((cell, c) => {
+            const cellKey = `${r}-${c}`;
+            const isClearing = clearingRows.includes(r) || clearingCols.includes(c);
+            const isActiveHover = isHovered(r, c);
+            const validHover = isValidHover();
+            const isNewlyPlaced = newlyPlacedCells.has(cellKey);
+            const isAdjacentToClearing = !isClearing && cell.filled && (clearingRows.length > 0 || clearingCols.length > 0);
+
+            let classes = 'relative rounded-md transition-all duration-200';
+            if (cell.filled) {
+              classes += ' liquid-block';
+              if (isNewlyPlaced) {
+                classes += ' animate-pop';
+              }
+              if (isAdjacentToClearing) {
+                classes += ' animate-subtle-shake';
+              }
+            } else {
+              classes += ' bg-white/5';
+            }
+            if (isClearing) {
+              classes += ' animate-clear z-20 scale-125';
+            }
+            if (isActiveHover && !cell.filled) {
+              if (validHover) {
+                classes += ' ghost-block scale-95';
+              } else {
+                classes += ' bg-red-500/20 scale-90 border border-red-500/30';
+              }
+            }
+
+            html += `
+              <div 
+                class="${classes}"
+                style="width: ${cellSize}px; height: ${cellSize}px"
+                data-row="${r}"
+                data-col="${c}"
+              >
+                ${cell.filled ? `<div class="w-full h-full rounded-md bg-gradient-to-br ${cell.color}"></div>` : ''}
+              </div>
+            `;
+          });
+        });
+
+        gridEl.innerHTML = html;
+        
+        if (newlyPlacedCells.size > 0) {
+          setTimeout(() => {
+            newlyPlacedCells.clear();
+          }, 500);
+        }
+      }
+
+      function updatePieces() {
+        const container = document.getElementById('piecesContainer');
+        if (availablePieces.length === 0 && !gameOver) {
+          container.innerHTML = '<div class="text-white/40 animate-pulse text-sm font-semibold tracking-wider">LOADING BLOCKS...</div>';
+          return;
+        }
+
+        let html = '';
+        availablePieces.forEach(piece => {
+          const pieceSize = window.innerWidth < 400 ? 12 : 16;
+          html += `
+            <div 
+              class="cursor-grab active:cursor-grabbing hover:scale-105 transition-transform touch-none active:scale-95"
+              data-piece-id="${piece.id}"
+            >
+              ${renderBlockShape(piece, pieceSize, false)}
+            </div>
+          `;
+        });
+
+        container.innerHTML = html;
+
+        // Attach event listeners
+        availablePieces.forEach(piece => {
+          const el = container.querySelector(`[data-piece-id="${piece.id}"]`);
+          if (el) {
+            el.addEventListener('pointerdown', (e) => handleDragStart(e, piece));
+            el.addEventListener('touchstart', (e) => handleDragStart(e, piece), { passive: false });
+          }
+        });
+      }
+
+      function updateScore() {
+        const scoreDisplay = document.getElementById('scoreDisplay');
+        const highScoreDisplay = document.getElementById('highScoreDisplay');
+        
+        // Smooth score update with pulse animation
+        scoreDisplay.style.transition = 'transform 0.2s ease-out';
+        scoreDisplay.style.transform = 'scale(1.1)';
+        scoreDisplay.textContent = score;
+        
+        setTimeout(() => {
+          scoreDisplay.style.transform = 'scale(1)';
+        }, 200);
+        
+        highScoreDisplay.textContent = Math.max(score, highScore);
+      }
+
+      // === GAME LOGIC ===
+      function isHovered(r, c) {
+        if (!hoverPosition || !dragPiece) return false;
+        const { shape } = dragPiece;
+        const { r: hr, c: hc } = hoverPosition;
+        
+        const lr = r - hr;
+        const lc = c - hc;
+
+        if (lr >= 0 && lr < shape.matrix.length && lc >= 0 && lc < shape.matrix[0].length) {
+          return shape.matrix[lr][lc] === 1;
+        }
+        return false;
+      }
+
+      function isValidHover() {
+        if (!hoverPosition || !dragPiece) return false;
+        return !checkCollision(grid, dragPiece.shape, hoverPosition.c, hoverPosition.r);
+      }
+
+      function handleDragStart(e, shape) {
+        e.preventDefault();
+        if (gameOver) return;
+        
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        
+        dragPiece = { shape, x: clientX, y: clientY };
+        updateDraggedPiece();
+      }
+
+      function handleDragMove(e) {
+        if (!dragPiece || !gridRef) return;
+
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+
+        dragPiece.x = clientX;
+        dragPiece.y = clientY;
+        updateDraggedPiece();
+
+        const rect = gridRef.getBoundingClientRect();
+        
+        const visualCenterX = clientX;
+        const visualCenterY = clientY - TOUCH_OFFSET_Y;
+
+        const relativeX = visualCenterX - rect.left;
+        const relativeY = visualCenterY - rect.top;
+
+        const shapePixelWidth = dragPiece.shape.matrix[0].length * (cellSize + GAP) - GAP;
+        const shapePixelHeight = dragPiece.shape.matrix.length * (cellSize + GAP) - GAP;
+
+        const shapeTopLeftX = relativeX - (shapePixelWidth / 2);
+        const shapeTopLeftY = relativeY - (shapePixelHeight / 2);
+
+        const rawC = Math.round(shapeTopLeftX / (cellSize + GAP));
+        const rawR = Math.round(shapeTopLeftY / (cellSize + GAP));
+
+        const validPos = findSmartSnapPosition(rawR, rawC, grid, dragPiece.shape);
+
+        if (validPos) {
+          hoverPosition = validPos;
+        } else {
+          hoverPosition = { r: rawR, c: rawC };
+        }
+
+        updateGrid();
+      }
+
+      function handleDragEnd(e) {
+        if (!dragPiece) return;
+
+        if (hoverPosition) {
+          const { r, c } = hoverPosition;
+          if (!checkCollision(grid, dragPiece.shape, c, r)) {
+            placePiece(dragPiece.shape, c, r);
+          }
+        }
+
+        dragPiece = null;
+        hoverPosition = null;
+        updateDraggedPiece();
+        updateGrid();
+      }
+
+      function updateDraggedPiece() {
+        const el = document.getElementById('draggedPiece');
+        if (!dragPiece) {
+          el.classList.add('hidden');
+          return;
+        }
+
+        el.classList.remove('hidden');
+        el.style.left = dragPiece.x + 'px';
+        el.style.top = (dragPiece.y - TOUCH_OFFSET_Y) + 'px';
+        el.style.transform = 'translate(-50%, -50%) scale(1.15)';
+        el.style.filter = 'drop-shadow(0 20px 30px rgba(0,0,0,0.5))';
+        el.innerHTML = renderBlockShape(dragPiece.shape, cellSize, false);
+      }
+
+      function placePiece(shape, startX, startY) {
+        const newGrid = grid.map(row => row.map(cell => ({ ...cell })));
+        
+        // Clear previous newly placed cells and mark the new ones
+        newlyPlacedCells.clear();
+        
+        for (let r = 0; r < shape.matrix.length; r++) {
+          for (let c = 0; c < shape.matrix[r].length; c++) {
+            if (shape.matrix[r][c] === 1) {
+              const x = startX + c;
+              const y = startY + r;
+              newGrid[y][x] = { filled: true, color: shape.color };
+              // Mark this cell as newly placed
+              newlyPlacedCells.add(`${y}-${x}`);
+            }
+          }
+        }
+
+        grid = newGrid;
+        
+        const remainingPieces = availablePieces.filter(p => p.id !== shape.id);
+        availablePieces = remainingPieces;
+
+        const blockCount = shape.matrix.flat().filter(x => x === 1).length;
+        score += blockCount * 10;
+
+        checkAndClearLines(remainingPieces);
+        updateGrid();
+        updatePieces();
+        updateScore();
+        broadcastState();
+      }
+
+      function checkAndClearLines(remainingPieces) {
+        const linesToClearRows = [];
+        const linesToClearCols = [];
+
+        for (let r = 0; r < GRID_SIZE; r++) {
+          if (grid[r].every(cell => cell.filled)) {
+            linesToClearRows.push(r);
+          }
+        }
+
+        for (let c = 0; c < GRID_SIZE; c++) {
+          if (grid.every(row => row[c].filled)) {
+            linesToClearCols.push(c);
+          }
+        }
+
+        if (linesToClearRows.length > 0 || linesToClearCols.length > 0) {
+          clearingRows = linesToClearRows;
+          clearingCols = linesToClearCols;
+          
+          // Update grid ONCE to show clearing animation
+          updateGrid();
+
+          const lineScore = (linesToClearRows.length + linesToClearCols.length) * GRID_SIZE * 20;
+          score += lineScore;
+          updateScore();
+
+          setTimeout(() => {
+            const finalGrid = grid.map(row => row.map(cell => ({ ...cell })));
+            
+            linesToClearRows.forEach(y => {
+              for(let x=0; x<GRID_SIZE; x++) finalGrid[y][x] = { filled: false, color: null };
+            });
+            linesToClearCols.forEach(x => {
+              for(let y=0; y<GRID_SIZE; y++) finalGrid[y][x] = { filled: false, color: null };
+            });
+
+            grid = finalGrid;
+            clearingRows = [];
+            clearingCols = [];
+            
+            // Update grid ONCE after clearing
+            updateGrid();
+            
+            // Finalize turn without updating grid again
+            finalizeTurnWithoutUpdate(remainingPieces, finalGrid);
+            broadcastState();
+          }, 400);
+        } else {
+          finalizeTurn(remainingPieces, grid);
+        }
+      }
+
+      function finalizeTurnWithoutUpdate(currentPieces, currentGrid) {
+        let nextPieces = currentPieces;
+        
+        if (nextPieces.length === 0) {
+          nextPieces = getRandomShapes(3);
+        }
+        
+        availablePieces = nextPieces;
+        updatePieces();
+
+        if (score > highScore) {
+          highScore = score;
+          localStorage.setItem('lumina-highscore', highScore.toString());
+          updateScore();
+        }
+
+        let canMove = false;
+        for (const piece of nextPieces) {
+          if (canPlaceAnywhere(currentGrid, piece)) {
+            canMove = true;
+            break;
+          }
+        }
+
+        if (!canMove) {
+          handleGameOver();
+        }
+      }
+
+      function finalizeTurn(currentPieces, currentGrid) {
+        let nextPieces = currentPieces;
+        
+        if (nextPieces.length === 0) {
+          nextPieces = getRandomShapes(3);
+        }
+        
+        availablePieces = nextPieces;
+        updatePieces();
+
+        if (score > highScore) {
+          highScore = score;
+          localStorage.setItem('lumina-highscore', highScore.toString());
+          updateScore();
+        }
+
+        let canMove = false;
+        for (const piece of nextPieces) {
+          if (canPlaceAnywhere(currentGrid, piece)) {
+            canMove = true;
+            break;
+          }
+        }
+
+        if (!canMove) {
+          handleGameOver();
+        }
+      }
+
+      function handleGameOver() {
+        gameOver = true;
+        if (score > highScore) {
+          highScore = score;
+          localStorage.setItem('lumina-highscore', score.toString());
+        }
+
+        if (mpActive && mpConn && mpConn.open) {
+          try {
+            mpConn.send({ type: 'gameover', username: mpUsername, score: score });
+          } catch (e) {}
+        }
+        
+        // Fade out game container smoothly
+        const gameContainer = document.getElementById('gameContainer');
+        gameContainer.style.transition = 'opacity 0.5s ease-out';
+        gameContainer.style.opacity = '0';
+        
+        // Wait for fade out, then hide and show game over
+        setTimeout(() => {
+          gameContainer.classList.add('hidden');
+          gameContainer.style.opacity = '1'; // Reset for next time
+          gameContainer.style.transition = '';
+          
+          showGameOverScreen();
+        }, 500);
+      }
+
+      function showGameOverScreen() {
+        const titleScreen = document.getElementById('titleScreen');
+        const gameOverScreen = document.getElementById('gameOverScreen');
+        
+        // Hide start screen
+        titleScreen.style.display = 'none';
+        
+        // Set opacity to 0 BEFORE changing innerHTML
+        gameOverScreen.style.opacity = '0';
+        gameOverScreen.style.display = 'block';
+        
+        // Now change the HTML while invisible
+        gameOverScreen.innerHTML = renderTitleScreen('gameover', score);
+        
+        // Small delay to ensure HTML is in DOM
+        setTimeout(() => {
+          // Fade in the container
+          gameOverScreen.style.transition = 'opacity 0.4s ease-in';
+          gameOverScreen.style.opacity = '1';
+          
+          // Then trigger block animations
+          setTimeout(() => {
+            gameOverScreen.style.transition = '';
+            animateTitleScreenIn(gameOverScreen);
+            
+            // Attach click handler
+            const btn = gameOverScreen.querySelector('#startBtn');
+            if (btn) {
+              btn.addEventListener('click', () => {
+                // Hide score immediately on click
+                const scoreSection = gameOverScreen.querySelector('#scoreSection');
+                if (scoreSection) {
+                  scoreSection.style.display = 'none';
+                }
+                
+                handleTitleScreenExit(gameOverScreen, () => {
+                  gameOverScreen.style.display = 'none';
+                  gameOverScreen.style.opacity = '1'; // Reset
+                  startGame();
+                });
+              });
+            }
+          }, 400);
+        }, 10);
+      }
+
+      function handleTitleScreenExit(container, callback) {
+        // Apply falling animation to all blocks
+        const letterBlocks = container.querySelectorAll('.letter-block');
+        letterBlocks.forEach((block) => {
+          const fallDelay = Math.random() * 0.2;
+          const rotation = Math.random() * 360 - 180;
+          block.style.animation = `fallDown 0.8s cubic-bezier(0.6, -0.28, 0.735, 0.045) forwards ${fallDelay}s`;
+          block.style.setProperty('--rot', `${rotation}deg`);
+        });
+        
+        const startBtn = container.querySelector('#startBtn');
+        if (startBtn) {
+          const rotation = Math.random() * 20 - 10;
+          startBtn.style.animation = `fallDown 0.6s cubic-bezier(0.55, 0.085, 0.68, 0.53) forwards`;
+          startBtn.style.setProperty('--rot', `${rotation}deg`);
+          startBtn.style.pointerEvents = 'none';
+        }
+        
+        const scoreSection = container.querySelector('#scoreSection');
+        if (scoreSection) {
+          scoreSection.style.opacity = '0';
+          scoreSection.style.transition = 'opacity 0.3s';
+        }
+        
+        // Execute callback after animation
+        setTimeout(callback, 1000);
+      }
+
+      function startGame() {
+        grid = createEmptyGrid();
+        score = 0;
+        gameOver = false;
+        availablePieces = getRandomShapes(3);
+        gameState = 'playing';
+        
+        const gameContainer = document.getElementById('gameContainer');
+        gameContainer.classList.remove('hidden');
+        gameContainer.style.opacity = '0';
+        
+        updateGrid();
+        updatePieces();
+        updateScore();
+        broadcastState();
+        
+        // Fade in smoothly
+        setTimeout(() => {
+          gameContainer.style.transition = 'opacity 0.5s ease-in';
+          gameContainer.style.opacity = '1';
+          
+          setTimeout(() => {
+            gameContainer.style.transition = '';
+          }, 500);
+        }, 10);
+      }
+
+      function handleResize() {
+        if (window.innerWidth < 600) {
+          cellSize = (window.innerWidth - 48) / GRID_SIZE - 2;
+        } else {
+          cellSize = CELL_SIZE_DESKTOP;
+        }
+        if (gameState === 'playing') {
+          updateGrid();
+        }
+      }
+
+      // === MULTIPLAYER: LOBBY UI ===
+      function openLobbyModal() {
+        const layer = document.getElementById('lobbyLayer');
+        layer.innerHTML = `
+          <div class="mp-modal-backdrop" id="lobbyBackdrop">
+            <div class="glass-panel rounded-3xl p-7 w-full max-w-sm flex flex-col gap-5 relative">
+              <button id="lobbyClose" class="absolute top-4 right-4 text-white/50 hover:text-white text-xl leading-none">X</button>
+              <h2 class="text-2xl font-black text-center bg-clip-text text-transparent bg-gradient-to-r from-cyan-300 to-indigo-300">MULTIPLAYER</h2>
+
+              <div class="flex flex-col gap-2">
+                <label class="text-xs uppercase tracking-widest text-white/50 font-bold">Il tuo username</label>
+                <input id="mpUsernameInput" class="mp-input" maxlength="14" placeholder="es. Raf" value="${mpUsername.replace(/"/g, '')}" />
+              </div>
+
+              <div id="lobbyMain" class="flex flex-col gap-4">
+                <button id="createRoomBtn" class="glass-btn rounded-2xl py-3 font-bold tracking-wide text-cyan-100">
+                  Crea una stanza
+                </button>
+
+                <div class="flex items-center gap-2 text-white/30 text-xs">
+                  <div class="flex-1 h-px bg-white/10"></div>
+                  oppure
+                  <div class="flex-1 h-px bg-white/10"></div>
+                </div>
+
+                <div class="flex flex-col gap-2">
+                  <input id="joinCodeInput" class="mp-input" maxlength="6" placeholder="CODICE A 6 CIFRE" />
+                  <button id="joinRoomBtn" class="glass-btn rounded-2xl py-3 font-bold tracking-wide text-fuchsia-100">
+                    Unisciti alla stanza
+                  </button>
+                </div>
+              </div>
+
+              <div id="lobbyStatus" class="text-center text-sm text-white/60 min-h-[1.2em]"></div>
+            </div>
+          </div>
+        `;
+
+        document.getElementById('lobbyClose').addEventListener('click', closeLobbyModal);
+        document.getElementById('createRoomBtn').addEventListener('click', createRoom);
+        document.getElementById('joinRoomBtn').addEventListener('click', () => {
+          const code = document.getElementById('joinCodeInput').value.trim();
+          if (code.length !== 6) {
+            setLobbyStatus('Inserisci un codice a 6 cifre valido.', true);
+            return;
+          }
+          joinRoom(code);
+        });
+      }
+
+      function closeLobbyModal() {
+        const layer = document.getElementById('lobbyLayer');
+        layer.innerHTML = '';
+        if (mpPeer && !mpConn) {
+          // Se chiudiamo senza esserci connessi, distruggiamo il peer
+          mpPeer.destroy();
+          mpPeer = null;
+        }
+      }
+
+      function setLobbyStatus(text, isError = false) {
+        const el = document.getElementById('lobbyStatus');
+        if (el) {
+          el.textContent = text;
+          el.style.color = isError ? '#fca5a5' : 'rgba(255,255,255,0.6)';
+        }
+      }
+
+      function readUsername() {
+        const input = document.getElementById('mpUsernameInput');
+        let name = (input ? input.value.trim() : '') || 'Player';
+        name = name.substring(0, 14);
+        mpUsername = name;
+        localStorage.setItem('lumina-username', name);
+        return name;
+      }
+
+      function generateRoomCode() {
+        return String(Math.floor(100000 + Math.random() * 900000));
+      }
+
+      function createRoom() {
+        if (typeof Peer === 'undefined') {
+          setLobbyStatus('Libreria multiplayer non caricata, riprova tra un istante.', true);
+          return;
+        }
+        readUsername();
+        mpRoomCode = generateRoomCode();
+        mpIsHost = true;
+
+        setLobbyStatus('Creazione stanza in corso...');
+        const peerId = 'liquidblocks-' + mpRoomCode;
+        mpPeer = new Peer(peerId);
+
+        mpPeer.on('open', () => {
+          document.getElementById('lobbyMain').innerHTML = `
+            <div class="flex flex-col items-center gap-3 py-2">
+              <span class="text-xs uppercase tracking-widest text-white/50 font-bold">Condividi questo codice</span>
+              <span class="mp-code-display">${mpRoomCode}</span>
+              <span class="text-white/40 text-xs animate-pulse">In attesa che un giocatore si unisca...</span>
+            </div>
+          `;
+          setLobbyStatus('');
+        });
+
+        mpPeer.on('connection', (conn) => {
+          mpConn = conn;
+          setupConnection();
+        });
+
+        mpPeer.on('error', (err) => {
+          console.error(err);
+          setLobbyStatus('Errore: impossibile creare la stanza. Riprova.', true);
+        });
+      }
+
+      function joinRoom(code) {
+        if (typeof Peer === 'undefined') {
+          setLobbyStatus('Libreria multiplayer non caricata, riprova tra un istante.', true);
+          return;
+        }
+        readUsername();
+        mpIsHost = false;
+        mpRoomCode = code;
+
+        setLobbyStatus('Connessione alla stanza ' + code + '...');
+        mpPeer = new Peer();
+
+        mpPeer.on('open', () => {
+          const conn = mpPeer.connect('liquidblocks-' + code, { reliable: true });
+          mpConn = conn;
+          setupConnection();
+        });
+
+        mpPeer.on('error', (err) => {
+          console.error(err);
+          setLobbyStatus('Stanza non trovata. Controlla il codice.', true);
+        });
+      }
+
+      function setupConnection() {
+        mpConn.on('open', () => {
+          setLobbyStatus('Connesso! Avvio partita...');
+          // Scambio username iniziale
+          mpConn.send({ type: 'hello', username: mpUsername });
+          setTimeout(startMultiplayerMatch, 500);
+        });
+
+        mpConn.on('data', handleMpData);
+
+        mpConn.on('close', () => {
+          const oppStatus = document.getElementById('oppStatus');
+          if (oppStatus) {
+            setOppStatus('Disconnesso', 'text-red-300');
+          }
+        });
+
+        mpConn.on('error', (err) => {
+          console.error(err);
+        });
+      }
+
+      function setOppStatus(text, colorClass) {
+        const oppStatus = document.getElementById('oppStatus');
+        const oppStatusText = document.getElementById('oppStatusText');
+        if (!oppStatus || !oppStatusText) return;
+        oppStatusText.textContent = text;
+        oppStatus.classList.remove('text-emerald-300', 'text-red-300', 'text-amber-300');
+        oppStatus.classList.add(colorClass);
+      }
+
+      function handleMpData(data) {
+        if (!data || !data.type) return;
+
+        if (data.type === 'hello') {
+          mpOpponentName = data.username;
+          const tag = document.getElementById('oppTagName');
+          if (tag) tag.textContent = data.username.toUpperCase();
+        } else if (data.type === 'state') {
+          mpOpponentName = data.username || mpOpponentName;
+          renderOpponentState(data);
+        } else if (data.type === 'gameover') {
+          const oppStatus = document.getElementById('oppStatus');
+          if (oppStatus) {
+            setOppStatus('Game Over', 'text-amber-300');
+          }
+        }
+      }
+
+      function startMultiplayerMatch() {
+        closeLobbyModal();
+        mpActive = true;
+
+        const myTag = document.getElementById('myTag');
+        const myTagName = document.getElementById('myTagName');
+        const oppPanel = document.getElementById('opponentPanel');
+        const oppTagName = document.getElementById('oppTagName');
+
+        if (myTag) myTag.classList.remove('hidden');
+        if (myTagName) myTagName.textContent = mpUsername.toUpperCase();
+        if (oppPanel) oppPanel.classList.remove('hidden');
+        if (oppTagName && mpOpponentName) oppTagName.textContent = mpOpponentName.toUpperCase();
+
+        // Nascondi la title screen e avvia la partita per entrambi
+        const titleScreen = document.getElementById('titleScreen');
+        if (titleScreen.querySelector('#titleScreenContainer')) {
+          handleTitleScreenExit(titleScreen, () => {
+            titleScreen.style.display = 'none';
+            titleScreen.style.opacity = '1';
+            startGame();
+          });
+        } else {
+          startGame();
+        }
+      }
+
+      function broadcastState() {
+        if (!mpActive || !mpConn || !mpConn.open) return;
+
+        // Comprimiamo la griglia in una struttura leggera (solo riempimento + colore)
+        const compactGrid = grid.map(row => row.map(cell => cell.filled ? (cell.color || 1) : 0));
+
+        try {
+          mpConn.send({
+            type: 'state',
+            username: mpUsername,
+            score: score,
+            grid: compactGrid,
+            gameOver: gameOver
+          });
+        } catch (e) {
+          console.error('Invio stato fallito', e);
+        }
+      }
+
+      function renderOpponentState(data) {
+        const oppScoreDisplay = document.getElementById('oppScoreDisplay');
+        if (oppScoreDisplay) oppScoreDisplay.textContent = data.score;
+
+        if (data.gameOver) {
+          setOppStatus('Game Over', 'text-amber-300');
+        }
+
+        const miniCell = window.innerWidth < 640 ? 16 : 20;
+        const oppGridEl = document.getElementById('oppGameGrid');
+        if (!oppGridEl || !data.grid) return;
+
+        oppGridEl.style.gridTemplateColumns = `repeat(${GRID_SIZE}, ${miniCell}px)`;
+        oppGridEl.style.gridTemplateRows = `repeat(${GRID_SIZE}, ${miniCell}px)`;
+        oppGridEl.style.gap = '3px';
+
+        let html = '';
+        data.grid.forEach(row => {
+          row.forEach(cell => {
+            if (cell && cell !== 0) {
+              html += `<div class="mini-block bg-gradient-to-br ${cell}" style="width:${miniCell}px;height:${miniCell}px"></div>`;
+            } else {
+              html += `<div class="bg-white/5 rounded-[3px]" style="width:${miniCell}px;height:${miniCell}px"></div>`;
+            }
+          });
+        });
+        oppGridEl.innerHTML = html;
+      }
+
+      // === INITIALIZATION ===
+      function init() {
+        renderGame();
+        
+        const titleScreen = document.getElementById('titleScreen');
+        
+        // Set opacity to 0 BEFORE changing innerHTML
+        titleScreen.style.opacity = '0';
+        titleScreen.style.display = 'block';
+        titleScreen.innerHTML = renderTitleScreen('start');
+        
+        // Trigger animations after a small delay
+        setTimeout(() => {
+          titleScreen.style.transition = 'opacity 0.3s ease-in';
+          titleScreen.style.opacity = '1';
+          
+          setTimeout(() => {
+            titleScreen.style.transition = '';
+            animateTitleScreenIn(titleScreen);
+            
+            // Attach click handler
+            const btn = titleScreen.querySelector('#startBtn');
+            if (btn) {
+              btn.addEventListener('click', () => {
+                handleTitleScreenExit(titleScreen, () => {
+                  titleScreen.style.display = 'none';
+                  titleScreen.style.opacity = '1'; // Reset
+                  startGame();
+                });
+              });
+            }
+
+            const mpBtn = titleScreen.querySelector('#mpBtn');
+            if (mpBtn) {
+              mpBtn.addEventListener('click', () => {
+                openLobbyModal();
+              });
+            }
+          }, 300);
+        }, 10);
+
+        window.addEventListener('resize', handleResize);
+        window.addEventListener('pointermove', handleDragMove);
+        window.addEventListener('pointerup', handleDragEnd);
+        window.addEventListener('touchmove', handleDragMove, { passive: false });
+        window.addEventListener('touchend', handleDragEnd);
+      }
+
+      init();
+    </script>
+</body>
+</html>

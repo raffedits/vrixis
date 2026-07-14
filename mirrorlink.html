@@ -1,0 +1,666 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>MirrorLink</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{font-family:'Inter',sans-serif;background:#02040a;color:#e2e8f0;overflow-x:hidden;-webkit-font-smoothing:antialiased}
+button{font-family:inherit;cursor:pointer;border:none;background:none}
+input{font-family:inherit}
+
+/* ═══ BLOBS ═══ */
+#app{position:relative;min-height:100vh;width:100%;overflow:hidden}
+.blob{position:fixed;border-radius:9999px;pointer-events:none;z-index:0;animation:breatheBlob 15s infinite alternate cubic-bezier(.4,0,.2,1)}
+
+/* ═══ VIEWS ═══ */
+.view{display:none;position:relative;z-index:10;min-height:100vh;flex-direction:column}
+.view.active{display:flex}
+
+/* ═══ KEYFRAMES ═══ */
+@keyframes breatheBlob{0%,100%{transform:translate(0,0)scale(1);opacity:.2}33%{transform:translate(30px,-50px)scale(1.1);opacity:.3}66%{transform:translate(-20px,20px)scale(.9);opacity:.2}}
+@keyframes gradientFlow{0%{background-position:0% 50%}50%{background-position:100% 50%}100%{background-position:0% 50%}}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
+@keyframes fadeUp{from{opacity:0;transform:translateY(28px)scale(.96)}to{opacity:1;transform:translateY(0)scale(1)}}
+@keyframes ripplePulse{0%{transform:scale(.95);box-shadow:0 0 0 0 rgba(59,130,246,.4)}70%{transform:scale(1);box-shadow:0 0 0 20px rgba(59,130,246,0)}100%{transform:scale(.95);box-shadow:0 0 0 0 rgba(59,130,246,0)}}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+@keyframes ping{75%,100%{transform:scale(2);opacity:0}}
+@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}40%{transform:translateX(6px)}60%{transform:translateX(-4px)}80%{transform:translateX(4px)}}
+
+.au{animation:fadeUp .8s cubic-bezier(.2,.8,.2,1) forwards;opacity:0}
+.au1{animation:fadeUp .8s .1s cubic-bezier(.2,.8,.2,1) forwards;opacity:0}
+.au2{animation:fadeUp .8s .2s cubic-bezier(.2,.8,.2,1) forwards;opacity:0}
+.au3{animation:fadeUp .8s .3s cubic-bezier(.2,.8,.2,1) forwards;opacity:0}
+.fl{animation:float 5s ease-in-out infinite}
+.fld{animation:float 5s 2.5s ease-in-out infinite}
+.rp{animation:ripplePulse 2s infinite}
+.sp{animation:spin 1s linear infinite}
+.pu{animation:pulse 2s ease-in-out infinite}
+.pg{animation:ping 1s cubic-bezier(0,0,.2,1) infinite}
+.sh{animation:shake .5s ease-in-out}
+
+.tflow{
+  background:linear-gradient(to right,#60a5fa,#c084fc,#22d3ee,#60a5fa);
+  background-size:300% auto;-webkit-background-clip:text;background-clip:text;
+  color:transparent;animation:gradientFlow 6s ease infinite;display:inline-block;padding-bottom:4px
+}
+
+/* ═══ HOME ═══ */
+.h-header{display:flex;align-items:center;justify-content:space-between;padding:1.5rem 2rem;max-width:80rem;margin:0 auto;width:100%}
+.logo{display:flex;align-items:center;gap:.75rem;font-weight:700;font-size:1.2rem;letter-spacing:-.02em;cursor:default}
+.logo-box{position:relative;padding:.5rem;border-radius:.75rem;background:rgba(59,130,246,.1);border:1px solid rgba(59,130,246,.2);display:flex;align-items:center;justify-content:center;transition:border-color .5s}
+.logo-box:hover{border-color:rgba(59,130,246,.4)}
+.logo-glow{position:absolute;inset:0;border-radius:inherit;background:#3b82f6;filter:blur(12px);opacity:.2;transition:opacity .5s;pointer-events:none}
+.logo:hover .logo-glow{opacity:.4}
+.logo-name{background:linear-gradient(to right,#fff,#94a3b8);-webkit-background-clip:text;background-clip:text;color:transparent}
+.badge{display:flex;align-items:center;gap:.5rem;padding:.375rem 1rem;background:rgba(15,23,42,.6);backdrop-filter:blur(12px);border-radius:9999px;border:1px solid rgba(30,41,59,.5);font-size:.75rem;font-weight:500;color:#94a3b8}
+.gdot{width:8px;height:8px;border-radius:50%;background:#10b981;box-shadow:0 0 8px rgba(16,185,129,.5)}
+
+.h-main{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:1rem;margin-top:-2.5rem}
+.h-title{text-align:center;margin-bottom:4rem}
+.h-title h1{font-size:clamp(2.4rem,7vw,4.5rem);font-weight:800;letter-spacing:-.03em;color:#fff;line-height:1.1;margin-bottom:1.5rem}
+.h-title p{color:#94a3b8;font-size:clamp(.9rem,2vw,1.15rem);max-width:32rem;line-height:1.7;font-weight:300;margin:0 auto}
+
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:2rem;width:100%;max-width:54rem;padding:0 1rem}
+.card{cursor:pointer;position:relative;overflow:hidden;background:rgba(11,18,33,.6);backdrop-filter:blur(16px);border:1px solid rgba(255,255,255,.05);border-radius:1.5rem;padding:2.5rem;display:flex;flex-direction:column;align-items:center;text-align:center;transition:transform .5s,box-shadow .5s,border-color .5s}
+.card:hover{transform:translateY(-4px);box-shadow:0 0 60px rgba(59,130,246,.15);border-color:rgba(59,130,246,.3)}
+.cglow{position:absolute;inset:0;pointer-events:none;opacity:0;transition:opacity .5s}
+.card:hover .cglow{opacity:1}
+.cicon{width:5.5rem;height:5.5rem;border-radius:1.25rem;background:#0f1d36;border:1px solid rgba(255,255,255,.05);display:flex;align-items:center;justify-content:center;margin-bottom:2rem;box-shadow:0 25px 50px rgba(0,0,0,.5);transition:transform .5s}
+.rc:hover .cicon{transform:scale(1.1)rotate(3deg)}
+.tc:hover .cicon{transform:scale(1.1)rotate(-3deg)}
+.card h3{font-size:1.4rem;font-weight:700;color:#fff;margin-bottom:.75rem;position:relative;z-index:1}
+.card p{font-size:.875rem;color:#94a3b8;line-height:1.6;max-width:13rem;position:relative;z-index:1}
+.h-footer{margin-top:5rem;display:flex;align-items:center;gap:.5rem;font-size:.75rem;font-weight:500;color:#475569;cursor:default;transition:color .3s}
+.h-footer:hover{color:#64748b}
+
+/* ═══ SECONDARY HEADER ═══ */
+.s-hdr{display:flex;align-items:center;justify-content:space-between;padding:1rem 2rem;max-width:80rem;margin:0 auto;width:100%}
+.back{display:flex;align-items:center;gap:.5rem;color:#94a3b8;font-size:.875rem;font-weight:600;transition:color .3s}
+.back:hover{color:#fff}
+.back-box{padding:.5rem;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.05);border-radius:.5rem;display:flex;align-items:center;justify-content:center;transition:background .3s,border-color .3s}
+.back:hover .back-box{background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.1)}
+
+/* ═══ PANEL ═══ */
+.panel{background:rgba(11,18,33,.8);backdrop-filter:blur(16px);border:1px solid rgba(255,255,255,.1);border-radius:2rem;padding:3rem;width:100%;max-width:460px;text-align:center;box-shadow:0 25px 50px rgba(0,0,0,.5)}
+.panel h2{font-size:1.875rem;font-weight:700;color:#fff;letter-spacing:-.02em;margin-bottom:.5rem}
+.psub{font-size:.875rem;color:#94a3b8;line-height:1.6}
+
+/* ═══ RECEIVE ═══ */
+.rx-body{flex:1;display:flex;align-items:center;justify-content:center;padding:0 1rem 1.5rem}
+
+/* WIFI ICON CONTAINER */
+.wifi-wrap{position:relative;width:7rem;height:7rem;border-radius:50%;background:radial-gradient(circle,#0f2244 0%,#091628 100%);display:flex;align-items:center;justify-content:center;margin:0 auto 2rem;box-shadow:0 0 0 1px rgba(59,130,246,.2),0 8px 32px rgba(0,0,0,.5)}
+.wifi-ring{position:absolute;inset:0;border-radius:50%;border:1px solid rgba(59,130,246,.3)}
+
+.spill{display:inline-flex;align-items:center;gap:.5rem;padding:.375rem .75rem;background:rgba(15,23,42,.5);border:1px solid rgba(255,255,255,.05);border-radius:9999px;font-size:.75rem;font-weight:500;color:#94a3b8;margin:.5rem 0 2.5rem}
+.sdot{width:6px;height:6px;border-radius:50%;background:#10b981;box-shadow:0 0 6px rgba(16,185,129,.6);transition:background .3s,box-shadow .3s}
+
+.cbox{background:#050912;border-radius:1rem;border:1px solid rgba(30,58,138,.2);padding:2rem;margin-bottom:2rem;position:relative;overflow:hidden;cursor:pointer;transition:border-color .5s}
+.cbox:hover{border-color:rgba(59,130,246,.3)}
+.cbox-glow{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:8rem;height:8rem;background:rgba(59,130,246,.1);filter:blur(50px);pointer-events:none;transition:background .5s}
+.cbox:hover .cbox-glow{background:rgba(59,130,246,.15)}
+
+/* CODE DISPLAY - Inter bold, same as original */
+#code-display{
+  font-size:clamp(2.6rem,9vw,3.4rem);
+  font-family:'Inter',sans-serif;
+  font-weight:700;
+  letter-spacing:.16em;
+  background:linear-gradient(to bottom,#ffffff,#bfdbfe);
+  -webkit-background-clip:text;background-clip:text;color:transparent;
+  user-select:all;display:block;text-align:center;
+  position:relative;z-index:1;transition:transform .3s;
+  font-variant-numeric:tabular-nums;
+}
+.cbox:hover #code-display{transform:scale(1.05)}
+#cspinner{display:none;justify-content:center;padding:.5rem 0;position:relative;z-index:1}
+.sring{width:2rem;height:2rem;border-radius:50%;border:2px solid transparent;border-bottom-color:#3b82f6}
+
+.btn-row{display:flex;gap:1rem}
+.btn{display:inline-flex;align-items:center;gap:.5rem;padding:.75rem 1.5rem;border-radius:.5rem;font-size:.875rem;font-weight:500;transition:all .2s}
+.btn:active{transform:scale(.97)}
+.bflex{flex:1;justify-content:center}
+.bfull{width:100%;justify-content:center;height:3.5rem;font-size:1rem}
+.bsec{background:rgba(255,255,255,.05);border:1px solid rgba(51,65,85,.7);color:#cbd5e1}
+.bsec:hover{background:rgba(255,255,255,.1)}
+.bgh{background:transparent;border:1px solid transparent;color:#94a3b8}
+.bgh:hover{background:rgba(255,255,255,.05)}
+.bpri{background:#0f609e;border:1px solid rgba(59,130,246,.2);color:#fff;box-shadow:0 4px 12px rgba(15,58,89,.3)}
+.bpri:hover:not(:disabled){background:#0c4e82;box-shadow:0 4px 20px rgba(59,130,246,.3)}
+.bpri:disabled{opacity:.5;cursor:not-allowed;pointer-events:none}
+.bdan{background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.2);color:#f87171}
+.bdan:hover{background:rgba(239,68,68,.2)}
+
+.lbadge{display:none;align-items:center;gap:.5rem;padding:.25rem .75rem;background:rgba(15,23,42,.6);border:1px solid rgba(30,41,59,.5);border-radius:9999px;font-size:.625rem;font-weight:500;color:#94a3b8}
+.lbadge.show{display:flex}
+.ldot{width:6px;height:6px;border-radius:50%;background:#10b981;box-shadow:0 0 6px rgba(16,185,129,.6);transition:background .3s,box-shadow .3s}
+
+#vpanel{display:none;position:relative;flex:1;background:#000;border-top:1px solid rgba(30,41,59,.5)}
+#vpanel.show{display:flex;flex-direction:column}
+#vstream{width:100%;flex:1;object-fit:contain;display:block;background:#000}
+#btnfs{position:absolute;bottom:1.5rem;right:1.5rem;padding:.75rem;background:rgba(0,0,0,.6);backdrop-filter:blur(8px);color:#fff;border-radius:9999px;border:1px solid rgba(255,255,255,.1);z-index:30;opacity:.5;transition:all .3s;display:flex;align-items:center;justify-content:center}
+#btnfs:hover{background:#2563eb;opacity:1}
+#bufol{display:none;position:absolute;inset:0;background:rgba(0,0,0,.2);backdrop-filter:blur(2px);align-items:center;justify-content:center;z-index:20}
+#bufol.show{display:flex}
+.bufbox{display:flex;flex-direction:column;align-items:center;gap:.5rem;background:rgba(0,0,0,.6);backdrop-filter:blur(8px);padding:1rem;border-radius:.75rem;color:#fff;font-size:.75rem;font-weight:500;letter-spacing:.05em}
+
+/* ═══ TRANSMIT ═══ */
+.tx-body{flex:1;display:flex;align-items:center;justify-content:center;padding:1rem}
+.cwrap{width:5.5rem;height:5.5rem;border-radius:1.25rem;background:#0f1d36;border:1px solid rgba(255,255,255,.05);display:flex;align-items:center;justify-content:center;margin:0 auto 2rem;box-shadow:0 20px 40px rgba(0,0,0,.6)}
+.iwrap{position:relative}
+.iglow{position:absolute;inset:0;border-radius:.75rem;background:rgba(59,130,246,.2);filter:blur(16px);opacity:0;pointer-events:none;transition:opacity .5s}
+
+/* CODE INPUT - Inter bold same as original */
+#cinput{
+  position:relative;width:100%;
+  background:#060a15;border:1px solid #1e293b;border-radius:.75rem;
+  padding:1.25rem;text-align:center;
+  font-size:1.6rem;font-family:'Inter',sans-serif;font-weight:600;
+  color:#fff;letter-spacing:.25em;
+  transition:border-color .3s;display:block;
+  box-shadow:inset 0 2px 4px rgba(0,0,0,.5);
+  font-variant-numeric:tabular-nums;
+}
+#cinput::placeholder{color:#334155;font-weight:400;letter-spacing:.15em}
+#cinput:focus{outline:none;border-color:rgba(59,130,246,.5)}
+#cinput:focus~.iglow{opacity:1}
+
+.txform{display:flex;flex-direction:column;gap:1.5rem}
+#errmsg{display:none;font-size:.75rem;color:#fca5a5;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.2);border-radius:.5rem;padding:.75rem;text-align:center}
+#errmsg.show{display:block}
+.pfooter{display:flex;justify-content:space-between;margin-top:2.5rem;padding-top:1.5rem;border-top:1px solid rgba(255,255,255,.05);font-size:.625rem;color:#475569;text-transform:uppercase;letter-spacing:.1em;font-weight:600}
+.pfooter span{display:flex;align-items:center;gap:.375rem}
+.pfr{color:rgba(16,185,129,.8)}
+
+.bcwrap{position:relative;width:6rem;height:6rem;border-radius:50%;background:rgba(239,68,68,.1);display:flex;align-items:center;justify-content:center;margin:0 auto 2rem}
+.bcping{position:absolute;inset:0;border-radius:50%;background:rgba(239,68,68,.2);opacity:.75}
+.bcring{position:absolute;inset:0;border-radius:50%;border:1px solid rgba(239,68,68,.2)}
+</style>
+</head>
+<body>
+<div id="app">
+
+<!-- BLOBS -->
+<div class="blob" style="top:-10%;left:20%;width:600px;height:600px;background:rgba(30,58,138,.2);filter:blur(100px)"></div>
+<div class="blob" style="bottom:-10%;right:10%;width:500px;height:500px;background:rgba(109,40,217,.1);filter:blur(120px);animation-delay:-7s;animation-duration:20s"></div>
+<div style="position:fixed;top:40%;left:50%;transform:translate(-50%,-50%);width:800px;height:400px;background:rgba(22,78,99,.05);filter:blur(90px);border-radius:9999px;pointer-events:none;opacity:.5;z-index:0"></div>
+
+<!-- ═══════════════ HOME ═══════════════ -->
+<div id="view-home" class="view active">
+  <header class="h-header au">
+    <div class="logo">
+      <div class="logo-box">
+        <div class="logo-glow"></div>
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/>
+        </svg>
+      </div>
+      <span class="logo-name">MirrorLink</span>
+    </div>
+    <div class="badge"><div class="gdot pu"></div>WebRTC Secure</div>
+  </header>
+
+  <main class="h-main">
+    <div class="h-title au1">
+      <h1>Screen Mirroring,<br><span class="tflow">Simplified.</span></h1>
+      <p>Secure, peer-to-peer screen sharing between your devices.<br>No installations, no complex setup. Just a code.</p>
+    </div>
+
+    <div class="cards au2">
+      <div class="card rc" onclick="go('receive')">
+        <div class="cglow" style="background:linear-gradient(to bottom,rgba(59,130,246,.05),transparent)"></div>
+        <div class="cicon fl">
+          <!-- Download arrow -->
+          <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="7 10 12 15 17 10"/>
+            <line x1="12" y1="15" x2="12" y2="3"/>
+          </svg>
+        </div>
+        <h3>Receive Stream</h3>
+        <p>Display another device's screen on this monitor.</p>
+      </div>
+
+      <div class="card tc" onclick="go('transmit')">
+        <div class="cglow" style="background:linear-gradient(to bottom,rgba(168,85,247,.05),transparent)"></div>
+        <div class="cicon fld">
+          <!-- Upload arrow -->
+          <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="17 8 12 3 7 8"/>
+            <line x1="12" y1="3" x2="12" y2="15"/>
+          </svg>
+        </div>
+        <h3>Transmit Stream</h3>
+        <p>Share this screen with another device nearby.</p>
+      </div>
+    </div>
+
+    <footer class="h-footer au3">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(16,185,129,.7)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+        <polyline points="9 12 11 14 15 10"/>
+      </svg>
+      End-to-end encrypted &bull; No data stored on servers
+    </footer>
+  </main>
+</div>
+
+<!-- ═══════════════ RECEIVE ═══════════════ -->
+<div id="view-receive" class="view">
+  <header class="s-hdr" style="background:#02040a;flex-shrink:0">
+    <button class="back" onclick="go('home')">
+      <div class="back-box">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/>
+        </svg>
+      </div>
+    </button>
+    <div id="lbadge" class="lbadge">
+      <div id="ldot" class="ldot pu"></div>
+      <span id="ltxt">Live &amp; Stable</span>
+    </div>
+  </header>
+
+  <div id="rx-wait" class="rx-body">
+    <div class="panel au1">
+
+      <!-- WIFI ICON - drawn with explicit safe coordinates, no clipping possible -->
+      <div class="wifi-wrap">
+        <div class="wifi-ring rp"></div>
+        <svg class="fl" width="48" height="48" viewBox="0 0 48 48" fill="none" style="position:relative;z-index:1">
+          <!-- 3 wifi arcs - meno curvi, più simili all'immagine -->
+          <path d="M8 30 Q24 12 40 30" stroke="#3b82f6" stroke-width="4.5" stroke-linecap="round" fill="none" opacity="0.8"/>
+          <path d="M13 34 Q24 22 35 34" stroke="#3b82f6" stroke-width="4.5" stroke-linecap="round" fill="none" opacity="0.85"/>
+          <path d="M18 38 Q24 32 30 38" stroke="#3b82f6" stroke-width="4.5" stroke-linecap="round" fill="none" opacity="0.9"/>
+          <circle cx="24" cy="42" r="3" fill="#3b82f6"/>
+        </svg>
+      </div>
+
+      <h2>Ready to Receive</h2>
+      <div class="spill">
+        <div id="sdot" class="sdot"></div>
+        <span id="stxt">Waiting for connection...</span>
+      </div>
+
+      <div class="cbox" onclick="doCopy()">
+        <div class="cbox-glow"></div>
+        <div id="cspinner"><div class="sring sp"></div></div>
+        <span id="code-display">--- ---</span>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn bsec bflex" onclick="doCopy()">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="9" y="9" width="13" height="13" rx="2"/>
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+          </svg>
+          Copy
+        </button>
+        <button class="btn bgh bflex" onclick="doNewCode()">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+          </svg>
+          New Code
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div id="vpanel" style="height:calc(100vh - 72px)">
+    <video id="vstream" playsinline autoplay></video>
+    <button id="btnfs" onclick="doFS()">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/>
+        <path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/>
+      </svg>
+    </button>
+    <div id="bufol">
+      <div class="bufbox">
+        <div class="sring sp" style="border-bottom-color:#fff"></div>
+        Optimizing Stream...
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ TRANSMIT ═══════════════ -->
+<div id="view-transmit" class="view">
+  <header class="s-hdr au">
+    <button class="back" onclick="go('home')">
+      <div class="back-box">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/>
+        </svg>
+      </div>
+      <span>Back</span>
+    </button>
+    <div class="badge"><div class="gdot pu"></div>WebRTC Secure</div>
+  </header>
+
+  <div class="tx-body">
+
+    <!-- IDLE PANEL -->
+    <div id="tx-idle" class="panel au1">
+      <div class="cwrap fl">
+        <!-- Cast icon: TV frame open bottom-left + wifi arcs in corner -->
+        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M2 16.1A5 5 0 0 1 5.9 20M2 12.05A9 9 0 0 1 9.95 20M2 8V6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-6"/>
+          <line x1="2" y1="20" x2="2.01" y2="20" stroke="#60a5fa" stroke-width="3"/>
+        </svg>
+      </div>
+      <h2>Start Stream</h2>
+      <p class="psub" style="margin-bottom:2.5rem">Enter the 6-digit code displayed on the receiver device.</p>
+
+      <div class="txform">
+        <div class="iwrap">
+          <input id="cinput" type="text" inputmode="numeric" placeholder="000 000" maxlength="6" oninput="onCI(this)">
+          <div class="iglow"></div>
+        </div>
+        <div id="errmsg"></div>
+        <button id="btnconn" class="btn bpri bfull" onclick="doStart()" disabled>
+          <svg id="connicon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M2 16.1A5 5 0 0 1 5.9 20M2 12.05A9 9 0 0 1 9.95 20M2 8V6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-6"/>
+            <line x1="2" y1="20" x2="2.01" y2="20" stroke-width="3"/>
+          </svg>
+          <span id="conntxt">Connect &amp; Stream</span>
+        </button>
+      </div>
+
+      <div class="pfooter">
+        <span>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#475569" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/>
+          </svg>
+          Direct Link
+        </span>
+        <span class="pfr">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="20 6 9 17 4 12"/>
+          </svg>
+          Ready
+        </span>
+      </div>
+    </div>
+
+    <!-- LIVE PANEL -->
+    <div id="tx-live" class="panel" style="display:none">
+      <div class="bcwrap">
+        <div class="bcping pg"></div>
+        <div class="bcring rp"></div>
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="position:relative;z-index:1">
+          <path d="M2 16.1A5 5 0 0 1 5.9 20M2 12.05A9 9 0 0 1 9.95 20M2 8V6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-6"/>
+          <line x1="2" y1="20" x2="2.01" y2="20" stroke="#ef4444" stroke-width="3"/>
+        </svg>
+      </div>
+      <h2>Broadcasting Live</h2>
+      <p class="psub" style="margin-bottom:1.5rem">Sharing screen to <span id="txtgt" style="color:#fff;font-family:'Inter',monospace;font-weight:700;letter-spacing:.1em"></span></p>
+      <button class="btn bdan bfull" onclick="doStop()">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"/><rect x="9" y="9" width="6" height="6"/>
+        </svg>
+        Stop Sharing
+      </button>
+    </div>
+  </div>
+</div>
+
+</div><!-- #app -->
+
+<script>
+/* ═══ PEERJS LOADER ═══ */
+const PFX='ml-v3-';
+let _pp=null;
+function ep(){
+  if(typeof Peer!=='undefined')return Promise.resolve();
+  if(_pp)return _pp;
+  _pp=new Promise((ok,fail)=>{
+    function load(u,fb){
+      const s=document.createElement('script');s.src=u;
+      s.onload=ok;
+      s.onerror=()=>fb?load(fb,null):fail(new Error('PeerJS unavailable'));
+      document.head.appendChild(s);
+    }
+    load('https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js',
+         'https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js');
+  });
+  return _pp;
+}
+ep().catch(()=>{});
+
+/* ═══ NAVIGATION ═══ */
+let cv='home';
+function go(name){
+  if(cv==='receive') cRx();
+  if(cv==='transmit') cTx();
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  document.getElementById('view-'+name).classList.add('active');
+  cv=name;
+  if(name==='receive') iRx();
+  if(name==='transmit') rTx();
+}
+
+/* ═══ RECEIVE ═══ */
+let rxCode='',rxS=null,rxWD=null,rxT=0,rxF=0;
+
+function iRx(){
+  rxCode=Math.floor(100000+Math.random()*900000).toString();
+  setCode(rxCode); showW('wait'); startRx(rxCode);
+}
+function doNewCode(){cRx();iRx()}
+function doCopy(){
+  if(!rxCode)return;
+  navigator.clipboard.writeText(rxCode).catch(()=>{
+    const t=document.createElement('textarea');t.value=rxCode;
+    document.body.appendChild(t);t.select();
+    try{document.execCommand('copy')}catch(e){}
+    document.body.removeChild(t);
+  });
+  // Rimosso il feedback visivo "Copied ✓"
+}
+function doFS(){
+  const v=document.getElementById('vstream');
+  if(!document.fullscreenElement)(v.requestFullscreen||v.webkitRequestFullscreen).call(v).catch(()=>{});
+  else(document.exitFullscreen||document.webkitExitFullscreen).call(document).catch(()=>{});
+}
+function cRx(){
+  if(rxWD){clearInterval(rxWD);rxWD=null}
+  if(rxS){rxS.destroy();rxS=null}
+  const v=document.getElementById('vstream');
+  if(v.srcObject){try{v.srcObject.getTracks().forEach(t=>t.stop())}catch(e){}v.srcObject=null}
+  showW('wait');setLive(false);setBuf(false);
+}
+async function startRx(code){
+  setStat('Loading...',true);showSpin(true);
+  try{await ep()}catch(e){setStat('Network error',true);showSpin(false);return}
+  const svc=new PS();rxS=svc;
+  setStat('Registering...',true);
+  try{await svc.init(code)}catch(e){
+    console.warn('rx init fail',e);
+    setTimeout(()=>{if(rxS===svc&&cv==='receive')startRx(code)},3000);return;
+  }
+  if(rxS!==svc)return;
+  showSpin(false);setCode(code);setStat('Waiting for connection...',false);
+  svc.listenStream(stream=>{
+    if(rxS!==svc)return;
+    showW('video');setLive(true);
+    const v=document.getElementById('vstream');
+    v.srcObject=stream;v.play().catch(()=>{});
+    startWD(v,svc);
+  });
+}
+function startWD(v,svc){
+  if(rxWD)clearInterval(rxWD);rxT=0;rxF=0;
+  rxWD=setInterval(()=>{
+    const t=v.currentTime;
+    const frozen=(t===rxT)&&!v.paused;
+    if(frozen){rxF++;setBuf(true);if(v.paused)v.play().catch(()=>{});if(rxF>3){svc.requestRepair();rxF=0}}
+    else{rxF=0;setBuf(false)}
+    rxT=t;
+  },1000);
+}
+function showW(w){
+  const wt=document.getElementById('rx-wait');
+  const vp=document.getElementById('vpanel');
+  if(w==='video'){wt.style.display='none';vp.classList.add('show')}
+  else{wt.style.display='flex';vp.classList.remove('show')}
+}
+function setCode(raw){
+  document.getElementById('code-display').textContent=raw.slice(0,3)+' '+raw.slice(3);
+}
+function showSpin(on){
+  document.getElementById('cspinner').style.display=on?'flex':'none';
+  document.getElementById('code-display').style.display=on?'none':'block';
+}
+function setStat(t,y){
+  document.getElementById('stxt').textContent=t;
+  const d=document.getElementById('sdot');
+  d.style.background=y?'#eab308':'#10b981';
+  d.style.boxShadow=y?'0 0 6px rgba(234,179,8,.6)':'0 0 6px rgba(16,185,129,.6)';
+}
+function setLive(on){document.getElementById('lbadge').classList.toggle('show',on)}
+function setBuf(on){
+  document.getElementById('bufol').classList.toggle('show',on);
+  const d=document.getElementById('ldot'),t=document.getElementById('ltxt');
+  if(on){d.style.background='#eab308';d.style.boxShadow='0 0 6px rgba(234,179,8,.6)';t.textContent='Stabilizing...'}
+  else{d.style.background='#10b981';d.style.boxShadow='0 0 6px rgba(16,185,129,.6)';t.textContent='Live & Stable'}
+}
+
+/* ═══ TRANSMIT ═══ */
+let txS=null;
+function rTx(){
+  const i=document.getElementById('cinput');if(i)i.value='';
+  setBtn(false);hideErr();setConn(false);
+  document.getElementById('tx-idle').style.display='';
+  document.getElementById('tx-live').style.display='none';
+}
+function cTx(){if(txS){txS.destroy();txS=null}}
+function onCI(el){
+  el.value=el.value.replace(/\D/g,'').slice(0,6);
+  hideErr();setBtn(el.value.length===6);
+}
+function setBtn(on){
+  const b=document.getElementById('btnconn');
+  b.disabled=!on;b.style.opacity=on?'1':'.5';b.style.pointerEvents=on?'':'none';
+}
+async function doStart(){
+  const code=document.getElementById('cinput').value.replace(/\D/g,'');
+  if(code.length!==6){showErr('Please enter a valid 6-digit code.');return}
+  hideErr();setConn(true);
+  try{await ep()}catch(e){setConn(false);showErr('Could not load networking library.');return}
+  let stream;
+  try{
+    stream=await navigator.mediaDevices.getDisplayMedia({
+      video:{frameRate:{ideal:30,max:60},displaySurface:'monitor'},audio:true
+    });
+  }catch(e){
+    setConn(false);
+    if(e.name==='NotAllowedError'||e.name==='PermissionDeniedError')showErr('Permission denied.');
+    else if(e.name==='NotFoundError')showErr('No screen selected.');
+    else showErr('Could not capture screen: '+e.message);
+    return;
+  }
+  stream.getVideoTracks()[0].onended=()=>doStop();
+  const svc=new PS();txS=svc;
+  try{await svc.connectAndStream(code,stream)}catch(e){console.warn('tx connect:',e)}
+  setConn(false);
+  document.getElementById('txtgt').textContent=code;
+  document.getElementById('tx-idle').style.display='none';
+  document.getElementById('tx-live').style.display='';
+}
+function doStop(){cTx();rTx()}
+function setConn(on){
+  const b=document.getElementById('btnconn'),t=document.getElementById('conntxt'),i=document.getElementById('connicon');
+  let sp=document.getElementById('connsp');
+  if(on){
+    t.textContent='Connecting...';b.disabled=true;b.style.opacity='.8';i.style.display='none';
+    if(!sp){sp=document.createElement('span');sp.id='connsp';
+      Object.assign(sp.style,{display:'inline-block',width:'1rem',height:'1rem',borderRadius:'50%',
+        border:'2px solid rgba(255,255,255,.3)',borderBottomColor:'#fff',animation:'spin 1s linear infinite'});
+      b.insertBefore(sp,t);}
+    else sp.style.display='inline-block';
+  }else{
+    t.textContent='Connect & Stream';b.style.opacity='1';i.style.display='';
+    if(sp)sp.style.display='none';
+  }
+}
+function showErr(m){const e=document.getElementById('errmsg');e.textContent=m;e.classList.add('show');e.classList.remove('sh');void e.offsetWidth;e.classList.add('sh')}
+function hideErr(){document.getElementById('errmsg').classList.remove('show')}
+
+/* ═══ PEER SERVICE ═══ */
+class PS{
+  constructor(){this.p=null;this.dead=false;this.call=null;this.dc=null;this.ls=null;this.tid=null;this.mi=null}
+  init(code){
+    this.dead=false;
+    return new Promise((ok,fail)=>{
+      if(this.p)try{this.p.destroy()}catch(e){}
+      const ICE=[{urls:'stun:stun.l.google.com:19302'},{urls:'stun:stun1.l.google.com:19302'},
+                 {urls:'stun:stun2.l.google.com:19302'},{urls:'stun:global.stun.twilio.com:3478'}];
+      let opened=false;let p;
+      try{p=new Peer(PFX+code,{debug:0,config:{iceServers:ICE,iceCandidatePoolSize:10}})}catch(e){fail(e);return}
+      this.p=p;
+      p.on('open',()=>{if(opened)return;opened=true;this._m();ok(PFX+code)});
+      p.on('disconnected',()=>{if(!this.dead)this._r()});
+      p.on('error',err=>{console.warn('[P]',err.type);if(!opened){opened=true;fail(err)}else if(['network','server-error','socket-error'].includes(err.type))this._r()});
+      setTimeout(()=>{if(!opened){opened=true;fail(new Error('timeout'))}},20000);
+    });
+  }
+  listenStream(cb){
+    if(!this.p)return;
+    this.p.on('connection',c=>this._d(c,false));
+    this.p.on('call',call=>{this.call=call;call.answer();call.on('stream',s=>cb(s));call.on('close',()=>{this.call=null})});
+  }
+  requestRepair(){if(this.dc&&this.dc.open)try{this.dc.send({type:'REPAIR_STREAM'})}catch(e){}}
+  connectAndStream(code,stream){
+    this.ls=stream;this.tid=PFX+code;
+    return this._sp().then(()=>new Promise((ok,fail)=>this._c(ok,fail)));
+  }
+  _sp(){return new Promise(res=>{
+    if(this.p&&!this.p.destroyed){if(this.p.disconnected)this.p.reconnect();res();return}
+    const p=new Peer(undefined,{debug:0,config:{iceServers:[{urls:'stun:stun.l.google.com:19302'},{urls:'stun:stun1.l.google.com:19302'}]}});
+    p.on('open',()=>{this._m();res()});p.on('error',e=>console.warn('[ST]',e));
+    p.on('disconnected',()=>{if(!this.dead)p.reconnect()});this.p=p;
+  })}
+  _c(ok,fail){
+    if(this.dead||!this.p||!this.tid||!this.ls)return;
+    const c=this.p.connect(this.tid,{reliable:true});this._d(c,true);
+    let opened=false;
+    const t=setTimeout(()=>{if(!opened&&fail)fail(new Error('DC timeout'))},15000);
+    c.on('open',()=>{opened=true;clearTimeout(t);this._mc();if(ok)ok()});
+    c.on('error',e=>{clearTimeout(t);console.warn('DC',e);setTimeout(()=>this._c(null,null),2000)});
+  }
+  _mc(){
+    if(!this.p||!this.tid||!this.ls)return;
+    if(this.call)try{this.call.close()}catch(e){}
+    this.call=this.p.call(this.tid,this.ls);
+    this.call.on('error',e=>console.warn('[C]',e));
+  }
+  _d(conn,isSender){
+    this.dc=conn;
+    conn.on('open',()=>{
+      const hb=setInterval(()=>{if(conn.open)try{conn.send({type:'PING'})}catch(e){}else clearInterval(hb)},2000);
+      conn.on('close',()=>clearInterval(hb));
+    });
+    conn.on('data',d=>{if(isSender&&d?.type==='REPAIR_STREAM')this._mc()});
+  }
+  _r(){if(!this.dead&&this.p&&this.p.disconnected)try{this.p.reconnect()}catch(e){}}
+  _m(){if(this.mi)clearInterval(this.mi);this.mi=setInterval(()=>{if(this.p&&!this.p.destroyed&&this.p.disconnected)try{this.p.reconnect()}catch(e){}},5000)}
+  destroy(){
+    this.dead=true;if(this.mi)clearInterval(this.mi);
+    if(this.call)try{this.call.close()}catch(e){}
+    if(this.dc)try{this.dc.close()}catch(e){}
+    if(this.ls)try{this.ls.getTracks().forEach(t=>t.stop())}catch(e){}
+    if(this.p)try{this.p.destroy()}catch(e){}this.p=null;this.ls=null;
+  }
+}
+</script>
+</body>
+</html>

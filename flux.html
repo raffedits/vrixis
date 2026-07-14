@@ -1,0 +1,1378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FLUX - Neon Physics Canvas</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #000;
+            touch-action: none;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        }
+        
+        #root {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+        }
+        
+        .scrollbar-hide::-webkit-scrollbar { display: none; }
+        .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+        
+        @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes zoom-in { from { transform: scale(0.95); } to { transform: scale(1); } }
+        @keyframes slide-in-from-bottom-10 { from { transform: translateY(40px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        .animate-in { animation-fill-mode: both; }
+        .fade-in { animation: fade-in 1s ease-out; }
+        .zoom-in { animation: zoom-in 1s ease-out; }
+        .slide-in-from-bottom-10 { animation: slide-in-from-bottom-10 1s ease-out; }
+        .duration-1000 { animation-duration: 1s; }
+    </style>
+    <script type="importmap">
+    {
+        "imports": {
+            "react": "https://esm.sh/react@19.2.4",
+            "react-dom/client": "https://esm.sh/react-dom@19.2.4/client",
+            "react/jsx-runtime": "https://esm.sh/react@19.2.4/jsx-runtime"
+        }
+    }
+    </script>
+</head>
+<body>
+    <div id="root"></div>
+    
+    <script type="module">
+        import React from 'react';
+        import ReactDOM from 'react-dom/client';
+        import { jsx as _jsx, jsxs as _jsxs, Fragment as _Fragment } from 'react/jsx-runtime';
+
+        const { useRef, useEffect, useState, useCallback } = React;
+
+        // ============= TYPES =============
+        const DEFAULT_CONFIG = {
+            baseHue: 210,
+            hueSpeed: 0.2,
+            particleSpeed: 1.2,
+            particleSize: 3.5,
+            trailOpacity: 0.15,
+            attractionForce: 0.6,
+            connectionRadius: 100,
+            particleCount: 2000,
+            viscosity: 0.98,
+            targetText: "FLUX",
+            style: 'classic',
+            interactionMode: 'attract',
+            chaos: 0,
+            enablePulse: false,
+            enableOrbit: false,
+            enableWarp: false,
+        };
+
+        // ============= PARTICLE CLASS =============
+        class Particle {
+            constructor(width, height) {
+                this.x = Math.random() * width;
+                this.y = Math.random() * height;
+                const angle = Math.random() * Math.PI * 2;
+                const speed = Math.random() * 0.5 + 0.2;
+                this.vx = Math.cos(angle) * speed;
+                this.vy = Math.sin(angle) * speed;
+                this.baseRadius = Math.random() * 2 + 1.5;
+                this.radius = this.baseRadius;
+                this.hue = Math.random() * 360;
+                this.noiseOffset = Math.random() * 1000;
+                this.targetX = null;
+                this.targetY = null;
+                this.life = 0;
+                this.char = Math.random() > 0.5 ? '1' : '0';
+                this.colorVar = Math.random();
+            }
+
+            setTarget(x, y) {
+                this.targetX = x;
+                this.targetY = y;
+            }
+
+            explode() {
+                const angle = Math.random() * Math.PI * 2;
+                const force = 30 + Math.random() * 30;
+                this.vx = Math.cos(angle) * force;
+                this.vy = Math.sin(angle) * force;
+            }
+
+            update(width, height, mouse, config, time) {
+                const hasTarget = this.targetX !== null && this.targetY !== null;
+                const t = time * 0.001;
+                
+                if (config.style === 'matrix' && Math.random() > 0.99) {
+                    this.char = Math.random() > 0.5 ? '1' : '0';
+                }
+
+                const isPhysicsInteraction = mouse.isPressed && (config.style === 'vortex' || config.enableOrbit);
+
+                let distToTarget = 0;
+                let dx = 0, dy = 0;
+
+                if (hasTarget) {
+                    dx = this.targetX - this.x;
+                    dy = this.targetY - this.y;
+                    if (Math.abs(dx) < 100 && Math.abs(dy) < 100) {
+                        distToTarget = Math.sqrt(dx * dx + dy * dy);
+                    } else {
+                        distToTarget = 200;
+                    }
+                }
+
+                // GLOBAL EFFECTS
+                if (config.enableOrbit) {
+                    let cx = width / 2;
+                    let cy = height / 2;
+                    
+                    if (mouse.isPressed) {
+                        cx = mouse.x;
+                        cy = mouse.y;
+                    }
+
+                    const odx = this.x - cx;
+                    const ody = this.y - cy;
+                    const odist = Math.sqrt(odx*odx + ody*ody) + 0.1;
+                    
+                    const orbitSpeed = 0.08;
+                    this.vx += (-ody / odist) * orbitSpeed;
+                    this.vy += (odx / odist) * orbitSpeed;
+
+                    if (mouse.isPressed) {
+                        const pullStr = 0.15;
+                        this.vx -= (odx / odist) * pullStr;
+                        this.vy -= (ody / odist) * pullStr;
+                    } else {
+                        this.vx -= (odx / odist) * 0.005;
+                        this.vy -= (ody / odist) * 0.005;
+                    }
+                }
+
+                if (config.enableWarp) {
+                    const cx = width / 2;
+                    const cy = height / 2;
+                    const odx = this.x - cx;
+                    const ody = this.y - cy;
+                    const warpSpeed = Math.sin(t) * 0.05;
+                    this.vx += odx * 0.002 + warpSpeed;
+                    this.vy += ody * 0.002 + warpSpeed;
+                }
+
+                // STYLE PHYSICS
+                switch(config.style) {
+                    case 'fire':
+                        this.vy -= 0.06;
+                        this.vx += (Math.random() - 0.5) * 0.2;
+                        break;
+                    case 'water':
+                        this.vx += Math.cos(this.y * 0.02 + t) * 0.04;
+                        this.vy += Math.sin(this.x * 0.02 + t) * 0.02;
+                        this.vy += 0.02;
+                        break;
+                    case 'sand':
+                        this.vy += 0.15;
+                        this.vx += (Math.random() - 0.5) * 0.05;
+                        break;
+                    case 'snow':
+                        this.vy += 0.03;
+                        this.vx += Math.sin(this.y * 0.01 + t) * 0.02;
+                        break;
+                    case 'pollen':
+                        this.vx += (Math.random() - 0.5) * 0.1;
+                        this.vy += (Math.random() - 0.5) * 0.1;
+                        break;
+                    case 'vortex':
+                        let cx = width / 2;
+                        let cy = height / 2;
+                        if (mouse.isPressed) {
+                            cx = mouse.x;
+                            cy = mouse.y;
+                        }
+                        const vdx = this.x - cx;
+                        const vdy = this.y - cy;
+                        const dist = Math.sqrt(vdx*vdx + vdy*vdy) + 1;
+                        this.vx += (-vdy / dist) * 0.2;
+                        this.vy += (vdx / dist) * 0.2;
+                        if (mouse.isPressed) {
+                            const pull = 0.20;
+                            this.vx -= (vdx / dist) * pull;
+                            this.vy -= (vdy / dist) * pull;
+                        } else {
+                            const pull = 0.03;
+                            this.vx -= (vdx / dist) * pull;
+                            this.vy -= (vdy / dist) * pull;
+                        }
+                        break;
+                    case 'lightning':
+                        if (Math.random() < 0.1) {
+                            this.vx += (Math.random() - 0.5) * 10;
+                            this.vy += (Math.random() - 0.5) * 10;
+                        }
+                        break;
+                    case 'classic':
+                    case 'ghost':
+                        const noiseScale = 0.02;
+                        this.vx += Math.cos(this.y * 0.01 + t + this.noiseOffset) * noiseScale;
+                        this.vy += Math.sin(this.x * 0.01 + t + this.noiseOffset) * noiseScale;
+                        break;
+                }
+
+                // TARGET SEEKING
+                if (hasTarget && !isPhysicsInteraction) {
+                    let snapStrength = 0.2;
+                    if (config.style === 'fire' || config.style === 'water' || config.style === 'sand') {
+                        snapStrength = 0.05;
+                    }
+
+                    if (distToTarget < 5) {
+                        this.x += dx * snapStrength;
+                        this.y += dy * snapStrength;
+                        this.vx *= 0.5;
+                        this.vy *= 0.5;
+                        const isDynamic = config.style === 'fire' || config.style === 'water' || config.style === 'vortex';
+                        if (!mouse.isPressed && !config.enableOrbit && !config.enableWarp && !isDynamic) {
+                            this.x = this.targetX;
+                            this.y = this.targetY;
+                        }
+                    } else {
+                        const steerPower = 0.08;
+                        this.vx += dx * steerPower * 0.1;
+                        this.vy += dy * steerPower * 0.1;
+                        this.vx *= 0.90;
+                        this.vy *= 0.90;
+                    }
+                } else {
+                    if (config.style === 'classic' || config.style === 'matrix') {
+                        this.vx += (Math.random() - 0.5) * 0.05;
+                        this.vy += (Math.random() - 0.5) * 0.05;
+                    }
+                }
+
+                // CHAOS
+                if (config.chaos > 0) {
+                    this.vx += (Math.random() - 0.5) * config.chaos * 3;
+                    this.vy += (Math.random() - 0.5) * config.chaos * 3;
+                }
+
+                // MOUSE INTERACTION
+                if (mouse.isPressed && !isPhysicsInteraction) {
+                    const mouseDx = mouse.x - this.x;
+                    const mouseDy = mouse.y - this.y;
+                    if (Math.abs(mouseDx) < 300 && Math.abs(mouseDy) < 300) {
+                        const mouseDist = Math.sqrt(mouseDx * mouseDx + mouseDy * mouseDy);
+                        const maxAttractDist = 300;
+                        if (mouseDist < maxAttractDist) {
+                            const forceDir = config.interactionMode === 'attract' ? 1 : -1;
+                            const forceMult = config.interactionMode === 'repel' ? 6 : 1.5;
+                            const force = (1 - (mouseDist / maxAttractDist)) * config.attractionForce * forceMult;
+                            this.vx += (mouseDx / mouseDist) * force * forceDir;
+                            this.vy += (mouseDy / mouseDist) * force * forceDir;
+                        }
+                    }
+                }
+
+                // PHYSICS STEP
+                let viscosity = config.viscosity;
+                if (config.style === 'vortex' || config.style === 'fire') viscosity = 0.99;
+                this.vx *= viscosity;
+                this.vy *= viscosity;
+                this.x += this.vx * config.particleSpeed;
+                this.y += this.vy * config.particleSpeed;
+
+                // BOUNDARIES
+                const bounce = -0.6;
+                if (this.x < 0) { this.x = 0; this.vx *= bounce; }
+                else if (this.x > width) { this.x = width; this.vx *= bounce; }
+                if (this.y < 0) { this.y = 0; this.vy *= bounce; }
+                else if (this.y > height) {
+                    this.y = height;
+                    this.vy *= bounce;
+                    if (config.style === 'sand' || config.style === 'snow') this.vx *= 0.8;
+                }
+
+                // VISUALS
+                this.hue += config.hueSpeed;
+                let sizePulse = 0;
+                if (config.enablePulse) {
+                    sizePulse = Math.sin(t * 8) * (this.baseRadius * 0.8);
+                }
+                this.radius = Math.max(0.5, this.baseRadius * (config.particleSize / 3) + sizePulse);
+            }
+
+            draw(ctx, config, isHighPerf) {
+                const finalHue = (config.baseHue + this.hue) % 360;
+                
+                // MATRIX RENDERER
+                if (config.style === 'matrix') {
+                    ctx.fillStyle = `hsla(120, 100%, 50%, 0.9)`;
+                    if (!isHighPerf) { ctx.shadowBlur = 4; ctx.shadowColor = '#0f0'; }
+                    else { ctx.shadowBlur = 0; }
+                    const fontSize = Math.floor(this.radius * 2.5) + 8;
+                    ctx.font = `${fontSize}px monospace`;
+                    ctx.fillText(this.char, this.x, this.y);
+                    return;
+                }
+
+                // STYLE COLORS
+                switch(config.style) {
+                    case 'fire':
+                        const fireHue = 0 + Math.random() * 50;
+                        ctx.fillStyle = `hsla(${fireHue}, 100%, 60%, 0.9)`;
+                        break;
+                    case 'water':
+                        const waterHue = 210 + Math.random() * 30;
+                        ctx.fillStyle = `hsla(${waterHue}, 90%, 50%, 0.8)`;
+                        break;
+                    case 'sand':
+                        const sandHue = 30 + Math.random() * 20;
+                        ctx.fillStyle = `hsla(${sandHue}, 80%, 60%, 0.9)`;
+                        break;
+                    case 'ghost':
+                        ctx.fillStyle = `hsla(0, 0%, 95%, ${0.1 + Math.random() * 0.3})`;
+                        break;
+                    case 'snow':
+                        ctx.fillStyle = `hsla(220, 100%, 100%, 0.9)`;
+                        break;
+                    case 'slime':
+                        ctx.fillStyle = `hsla(${80 + Math.random() * 40}, 100%, 50%, 0.8)`;
+                        break;
+                    case 'pollen':
+                        if (this.colorVar < 0.25) ctx.fillStyle = `hsla(320, 100%, 70%, 0.9)`;
+                        else if (this.colorVar < 0.5) ctx.fillStyle = `hsla(50, 100%, 60%, 0.9)`;
+                        else if (this.colorVar < 0.75) ctx.fillStyle = `hsla(20, 100%, 60%, 0.9)`;
+                        else ctx.fillStyle = `hsla(260, 80%, 70%, 0.9)`;
+                        break;
+                    case 'vortex':
+                        const vHue = 260 + Math.random() * 60;
+                        ctx.fillStyle = `hsla(${vHue}, 100%, 65%, 0.8)`;
+                        break;
+                    case 'lightning':
+                        if (Math.random() > 0.9) ctx.fillStyle = '#fff';
+                        else ctx.fillStyle = `hsla(50, 100%, 70%, 0.8)`;
+                        break;
+                    case 'cyber':
+                        const cHue = Math.random() > 0.5 ? 320 : 180;
+                        ctx.fillStyle = `hsla(${cHue}, 100%, 50%, 0.9)`;
+                        break;
+                    case 'classic':
+                    default:
+                        ctx.fillStyle = `hsla(${finalHue}, 90%, 60%, 1)`;
+                }
+
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        // ============= CONTROL PANEL =============
+        const STYLES = [
+            { id: 'classic', label: 'Classic', icon: '✨', color: 'from-cyan-400 to-blue-500' },
+            { id: 'fire', label: 'Inferno', icon: '🔥', color: 'from-orange-500 to-red-600' },
+            { id: 'water', label: 'Ocean', icon: '💧', color: 'from-blue-400 to-indigo-500' },
+            { id: 'lightning', label: 'Bolt', icon: '⚡', color: 'from-yellow-300 to-white' },
+            { id: 'sand', label: 'Sand', icon: '⏳', color: 'from-amber-400 to-orange-800' },
+            { id: 'matrix', label: 'Matrix', icon: '📟', color: 'from-green-400 to-emerald-600' },
+            { id: 'cyber', label: 'Cyber', icon: '💾', color: 'from-pink-500 to-purple-600' },
+            { id: 'ghost', label: 'Ghost', icon: '👻', color: 'from-slate-300 to-blue-200' },
+            { id: 'snow', label: 'Snow', icon: '❄️', color: 'from-blue-100 to-white' },
+            { id: 'slime', label: 'Slime', icon: '🦠', color: 'from-lime-400 to-green-600' },
+            { id: 'pollen', label: 'Pollen', icon: '🌼', color: 'from-yellow-300 to-orange-400' },
+            { id: 'vortex', label: 'Vortex', icon: '🌀', color: 'from-indigo-500 to-purple-600' },
+        ];
+
+        function ControlPanel({ config, onUpdate, onExplode, onSave, onDrawingSave }) {
+            const [isOpen, setIsOpen] = useState(false);
+            const [isDrawingOpen, setIsDrawingOpen] = useState(false);
+            const drawCanvasRef = useRef(null);
+            const [isDrawing, setIsDrawing] = useState(false);
+            const [brushSize, setBrushSize] = useState(20);
+
+            const getCanvasCoordinates = (e) => {
+                const canvas = drawCanvasRef.current;
+                if (!canvas) return { x: 0, y: 0 };
+                const rect = canvas.getBoundingClientRect();
+                const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+                const scaleX = canvas.width / rect.width;
+                const scaleY = canvas.height / rect.height;
+                return {
+                    x: (clientX - rect.left) * scaleX,
+                    y: (clientY - rect.top) * scaleY
+                };
+            };
+
+            const handleImageUpload = (e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (evt) => {
+                    const img = new Image();
+                    img.onload = () => {
+                        const offScreen = document.createElement('canvas');
+                        const MAX_DIM = 800;
+                        let w = img.width;
+                        let h = img.height;
+                        if (w > h) {
+                            if (w > MAX_DIM) { h *= MAX_DIM / w; w = MAX_DIM; }
+                        } else {
+                            if (h > MAX_DIM) { w *= MAX_DIM / h; h = MAX_DIM; }
+                        }
+                        offScreen.width = w;
+                        offScreen.height = h;
+                        const ctx = offScreen.getContext('2d');
+                        if (ctx) {
+                            ctx.drawImage(img, 0, 0, w, h);
+                            const imageData = ctx.getImageData(0, 0, w, h);
+                            onDrawingSave(imageData);
+                            onUpdate('targetText', '');
+                            onExplode();
+                        }
+                    };
+                    img.src = evt.target?.result;
+                };
+                reader.readAsDataURL(file);
+                e.target.value = '';
+            };
+
+            const startDrawing = (e) => {
+                const canvas = drawCanvasRef.current;
+                if (!canvas) return;
+                const ctx = canvas.getContext('2d');
+                if (!ctx) return;
+                setIsDrawing(true);
+                const { x, y } = getCanvasCoordinates(e);
+                ctx.beginPath();
+                ctx.moveTo(x, y);
+                ctx.strokeStyle = 'white';
+                ctx.lineWidth = brushSize;
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+                ctx.lineTo(x, y);
+                ctx.stroke();
+            };
+
+            const draw = (e) => {
+                if (!isDrawing) return;
+                const canvas = drawCanvasRef.current;
+                if (!canvas) return;
+                const ctx = canvas.getContext('2d');
+                if (!ctx) return;
+                const { x, y } = getCanvasCoordinates(e);
+                ctx.lineTo(x, y);
+                ctx.stroke();
+            };
+
+            const stopDrawing = () => {
+                setIsDrawing(false);
+                const canvas = drawCanvasRef.current;
+                if (canvas) {
+                    const ctx = canvas.getContext('2d');
+                    ctx?.beginPath();
+                }
+            };
+
+            const clearDrawing = () => {
+                const canvas = drawCanvasRef.current;
+                if (!canvas) return;
+                const ctx = canvas.getContext('2d');
+                if (!ctx) return;
+                ctx.fillStyle = 'black';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+            };
+
+            const saveDrawing = () => {
+                const canvas = drawCanvasRef.current;
+                if (!canvas) return;
+                const ctx = canvas.getContext('2d');
+                if (!ctx) return;
+                const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                onDrawingSave(imageData);
+                onUpdate('targetText', '');
+                setIsDrawingOpen(false);
+            };
+
+            useEffect(() => {
+                if (isDrawingOpen && drawCanvasRef.current) {
+                    requestAnimationFrame(() => {
+                        const canvas = drawCanvasRef.current;
+                        if (!canvas) return;
+                        const parent = canvas.parentElement;
+                        if (parent) {
+                            canvas.width = parent.clientWidth;
+                            canvas.height = parent.clientHeight;
+                            const ctx = canvas.getContext('2d');
+                            if (ctx) {
+                                ctx.fillStyle = 'black';
+                                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                            }
+                        }
+                    });
+                }
+            }, [isDrawingOpen]);
+
+            const renderSlider = (label, value, min, max, step, key, suffix = '') => {
+                return _jsxs('div', {
+                    className: "space-y-1",
+                    children: [
+                        _jsxs('div', {
+                            className: "flex justify-between items-end",
+                            children: [
+                                _jsx('label', {
+                                    className: "text-[9px] font-mono text-white/50 uppercase tracking-widest",
+                                    children: label
+                                }),
+                                _jsx('span', {
+                                    className: "text-[10px] font-bold text-white/90",
+                                    children: `${value.toFixed(step < 1 ? 1 : 0)}${suffix}`
+                                })
+                            ]
+                        }),
+                        _jsx('input', {
+                            type: "range",
+                            min: min,
+                            max: max,
+                            step: step,
+                            value: value,
+                            onChange: (e) => onUpdate(key, Number(e.target.value)),
+                            className: "w-full h-1 bg-white/10 rounded-full appearance-none cursor-pointer accent-white"
+                        })
+                    ]
+                });
+            };
+
+            return _jsxs(_Fragment, {
+                children: [
+                    _jsx('button', {
+                        onClick: () => setIsOpen(!isOpen),
+                        className: `absolute top-6 right-6 z-[60] p-4 rounded-full backdrop-blur-2xl transition-all duration-500 border shadow-2xl ${
+                            isOpen ? 'bg-white/20 border-white/50 rotate-90 scale-110' : 'bg-black/40 border-white/10 hover:bg-black/60'
+                        }`,
+                        children: isOpen ? (
+                            _jsx('svg', {
+                                className: "w-6 h-6 text-white",
+                                fill: "none",
+                                viewBox: "0 0 24 24",
+                                stroke: "currentColor",
+                                children: _jsx('path', {
+                                    strokeLinecap: "round",
+                                    strokeLinejoin: "round",
+                                    strokeWidth: 2,
+                                    d: "M6 18L18 6M6 6l12 12"
+                                })
+                            })
+                        ) : (
+                            _jsx('svg', {
+                                className: "w-6 h-6 text-white",
+                                fill: "none",
+                                viewBox: "0 0 24 24",
+                                stroke: "currentColor",
+                                children: _jsx('path', {
+                                    strokeLinecap: "round",
+                                    strokeLinejoin: "round",
+                                    strokeWidth: 2,
+                                    d: "M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"
+                                })
+                            })
+                        )
+                    }),
+
+                    _jsx('div', {
+                        className: `fixed top-0 right-0 h-full w-80 z-50 bg-black/80 backdrop-blur-3xl border-l border-white/10 transition-all duration-700 ease-[cubic-bezier(0.23,1,0.32,1)] ${
+                            isOpen ? 'translate-x-0 opacity-100' : 'translate-x-full opacity-0 pointer-events-none'
+                        } shadow-[-20px_0_100px_rgba(0,0,0,0.9)]`,
+                        children: _jsxs('div', {
+                            className: "p-8 pt-20 space-y-6 overflow-y-auto h-full scrollbar-hide text-white pb-24",
+                            children: [
+                                _jsx('header', {
+                                    children: _jsxs('div', {
+                                        children: [
+                                            _jsxs('h2', {
+                                                className: "text-4xl font-black italic tracking-tighter uppercase text-white leading-[0.85]",
+                                                children: [
+                                                    _jsx('div', { children: "CONTROL" }),
+                                                    _jsx('div', { children: "CENTER" })
+                                                ]
+                                            }),
+                                            _jsx('p', {
+                                                className: "text-[9px] font-mono text-white/40 mt-2 uppercase tracking-[0.3em]",
+                                                children: "V7.2 - CREATIVE SUITE"
+                                            })
+                                        ]
+                                    })
+                                }),
+
+                                _jsxs('div', {
+                                    className: "space-y-6",
+                                    children: [
+                                        _jsx('div', {
+                                            className: "bg-white/5 rounded-2xl p-1.5 flex border border-white/10",
+                                            children: ['attract', 'repel'].map((mode) => (
+                                                _jsx('button', {
+                                                    onClick: () => onUpdate('interactionMode', mode),
+                                                    className: `flex-1 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${
+                                                        config.interactionMode === mode ? 'bg-white text-black shadow-lg' : 'text-white/50 hover:text-white'
+                                                    }`,
+                                                    children: mode
+                                                }, mode)
+                                            ))
+                                        }),
+
+                                        _jsxs('div', {
+                                            className: "space-y-3",
+                                            children: [
+                                                _jsx('label', {
+                                                    className: "text-[10px] font-mono text-white/50 uppercase tracking-[0.2em]",
+                                                    children: "Select Style"
+                                                }),
+                                                _jsx('div', {
+                                                    className: "grid grid-cols-3 gap-3",
+                                                    children: STYLES.map((style) => (
+                                                        _jsxs('button', {
+                                                            onClick: () => onUpdate('style', style.id),
+                                                            className: `relative p-3 rounded-xl border-2 transition-all duration-300 overflow-hidden flex flex-col items-center justify-center gap-1.5 group ${
+                                                                config.style === style.id 
+                                                                    ? 'border-white bg-white/10 scale-[1.02]' 
+                                                                    : 'border-white/10 bg-black/40 hover:bg-white/5 hover:border-white/30 hover:scale-105'
+                                                            }`,
+                                                            children: [
+                                                                _jsx('span', {
+                                                                    className: "text-2xl group-hover:scale-110 transition-transform",
+                                                                    children: style.icon
+                                                                }),
+                                                                _jsx('span', {
+                                                                    className: `text-[8px] font-black uppercase tracking-wider ${
+                                                                        config.style === style.id ? 'text-white' : 'text-white/60'
+                                                                    }`,
+                                                                    children: style.label
+                                                                })
+                                                            ]
+                                                        }, style.id)
+                                                    ))
+                                                })
+                                            ]
+                                        }),
+
+                                        _jsxs('div', {
+                                            className: "space-y-3 p-5 bg-black/40 rounded-2xl border border-white/10 group focus-within:border-white/20 transition-all",
+                                            children: [
+                                                _jsx('label', {
+                                                    className: "text-[8px] font-mono text-white/40 uppercase tracking-[0.25em] block",
+                                                    children: "CREATIVE INPUT"
+                                                }),
+                                                _jsxs('div', {
+                                                    className: "flex flex-col gap-3",
+                                                    children: [
+                                                        _jsx('input', {
+                                                            type: "text",
+                                                            placeholder: "TYPE HERE...",
+                                                            value: config.targetText,
+                                                            onChange: (e) => {
+                                                                onUpdate('targetText', e.target.value);
+                                                                onDrawingSave(null);
+                                                            },
+                                                            className: "w-full bg-transparent border-b border-white/20 py-2 text-white font-black tracking-widest placeholder:text-white/20 focus:outline-none focus:border-white transition-colors uppercase text-2xl"
+                                                        }),
+                                                        _jsx('button', {
+                                                            onClick: () => setIsDrawingOpen(true),
+                                                            className: "w-full py-2.5 bg-white/5 hover:bg-white/10 rounded-lg border border-white/10 text-[9px] font-bold uppercase transition-all hover:border-white/20 flex items-center justify-center gap-2",
+                                                            children: _jsxs(_Fragment, {
+                                                                children: [
+                                                                    _jsx('span', { children: "✏️" }),
+                                                                    _jsx('span', { children: "DRAW" })
+                                                                ]
+                                                            })
+                                                        })
+                                                    ]
+                                                })
+                                            ]
+                                        }),
+
+                                        _jsxs('div', {
+                                            className: "space-y-5",
+                                            children: [
+                                                _jsxs('div', {
+                                                    className: "grid grid-cols-2 gap-4",
+                                                    children: [
+                                                        renderSlider("Density", config.particleCount, 50, 5000, 50, 'particleCount'),
+                                                        renderSlider("Speed", config.particleSpeed, 0.1, 5, 0.1, 'particleSpeed', 'x')
+                                                    ]
+                                                }),
+                                                _jsxs('div', {
+                                                    className: "grid grid-cols-2 gap-4",
+                                                    children: [
+                                                        renderSlider("Size", config.particleSize, 1, 10, 0.5, 'particleSize', 'px'),
+                                                        renderSlider("Chaos", config.chaos, 0, 1, 0.05, 'chaos')
+                                                    ]
+                                                }),
+                                                _jsxs('div', {
+                                                    className: "grid grid-cols-2 gap-4",
+                                                    children: [
+                                                        renderSlider("Force", config.attractionForce, 0.1, 2, 0.1, 'attractionForce'),
+                                                        renderSlider("Trails", 1 - (config.trailOpacity ?? 0.15), 0, 0.95, 0.05, 'trailOpacity', '')
+                                                    ]
+                                                }),
+                                                
+                                                _jsxs('div', {
+                                                    className: "space-y-1",
+                                                    children: [
+                                                        _jsxs('div', {
+                                                            className: "flex justify-between items-end",
+                                                            children: [
+                                                                _jsx('label', {
+                                                                    className: "text-[9px] font-mono text-white/50 uppercase tracking-widest",
+                                                                    children: "Trails Length"
+                                                                }),
+                                                                _jsx('span', {
+                                                                    className: "text-[10px] font-bold text-white/90",
+                                                                    children: `${((1 - (config.trailOpacity ?? 0.15)) * 100).toFixed(0)}%`
+                                                                })
+                                                            ]
+                                                        }),
+                                                        _jsx('input', {
+                                                            type: "range",
+                                                            min: "0.02",
+                                                            max: "0.5",
+                                                            step: "0.01",
+                                                            value: config.trailOpacity ?? 0.15,
+                                                            onChange: (e) => onUpdate('trailOpacity', Number(e.target.value)),
+                                                            className: "w-full h-1 bg-gradient-to-l from-white/10 to-white/50 rounded-full appearance-none cursor-pointer accent-white",
+                                                            style: { direction: 'rtl' }
+                                                        })
+                                                    ]
+                                                }),
+
+                                                _jsxs('div', {
+                                                    className: "space-y-1",
+                                                    children: [
+                                                        _jsxs('div', {
+                                                            className: "flex justify-between items-end",
+                                                            children: [
+                                                                _jsx('label', {
+                                                                    className: "text-[9px] font-mono text-white/50 uppercase tracking-widest",
+                                                                    children: "Color Spd"
+                                                                }),
+                                                                _jsx('div', {
+                                                                    className: "h-3 w-3 rounded-full border border-white/20 shadow-lg",
+                                                                    style: { backgroundColor: `hsl(${config.baseHue ?? 0}, 100%, 60%)` }
+                                                                })
+                                                            ]
+                                                        }),
+                                                        _jsx('input', {
+                                                            type: "range",
+                                                            min: "0",
+                                                            max: "5",
+                                                            step: "0.1",
+                                                            value: config.hueSpeed ?? 0.2,
+                                                            onChange: (e) => onUpdate('hueSpeed', Number(e.target.value)),
+                                                            className: "w-full h-1 bg-white/10 rounded-full appearance-none cursor-pointer accent-white"
+                                                        })
+                                                    ]
+                                                }),
+
+                                                _jsxs('div', {
+                                                    className: "space-y-3 pt-4 border-t border-white/10",
+                                                    children: [
+                                                        _jsx('label', {
+                                                            className: "text-[9px] font-mono text-white/40 uppercase tracking-widest",
+                                                            children: "Special FX"
+                                                        }),
+                                                        _jsxs('div', {
+                                                            className: "flex gap-2",
+                                                            children: [
+                                                                _jsx('button', {
+                                                                    onClick: () => onUpdate('enablePulse', !config.enablePulse),
+                                                                    className: `flex-1 py-2 rounded-lg border text-[9px] font-bold uppercase transition-all ${
+                                                                        config.enablePulse ? 'bg-pink-500/20 border-pink-500 text-pink-200' : 'bg-white/5 border-white/10 text-white/40'
+                                                                    }`,
+                                                                    children: "💓 Pulse"
+                                                                }),
+                                                                _jsx('button', {
+                                                                    onClick: () => onUpdate('enableOrbit', !config.enableOrbit),
+                                                                    className: `flex-1 py-2 rounded-lg border text-[9px] font-bold uppercase transition-all ${
+                                                                        config.enableOrbit ? 'bg-cyan-500/20 border-cyan-500 text-cyan-200' : 'bg-white/5 border-white/10 text-white/40'
+                                                                    }`,
+                                                                    children: "🪐 Orbit"
+                                                                }),
+                                                                _jsx('button', {
+                                                                    onClick: () => onUpdate('enableWarp', !config.enableWarp),
+                                                                    className: `flex-1 py-2 rounded-lg border text-[9px] font-bold uppercase transition-all ${
+                                                                        config.enableWarp ? 'bg-purple-500/20 border-purple-500 text-purple-200' : 'bg-white/5 border-white/10 text-white/40'
+                                                                    }`,
+                                                                    children: "🌌 Warp"
+                                                                })
+                                                            ]
+                                                        })
+                                                    ]
+                                                })
+                                            ]
+                                        })
+                                    ]
+                                }),
+
+                                _jsxs('div', {
+                                    className: "pt-4 flex flex-col gap-2 pb-8",
+                                    children: [
+                                        _jsx('button', {
+                                            onClick: onExplode,
+                                            className: "w-full py-4 bg-white text-black font-black uppercase tracking-tighter hover:bg-slate-200 transition-all active:scale-95 rounded-xl text-md shadow-xl",
+                                            children: "Shockwave"
+                                        }),
+                                        _jsx('button', {
+                                            onClick: onSave,
+                                            className: "w-full py-3 border border-white/20 text-white font-black uppercase tracking-tighter hover:bg-white/10 transition-all rounded-xl text-xs",
+                                            children: "Save Artwork"
+                                        })
+                                    ]
+                                })
+                            ]
+                        })
+                    }),
+
+                    isOpen && _jsx('div', {
+                        onClick: () => setIsOpen(false),
+                        className: "fixed inset-0 bg-black/40 z-40 backdrop-blur-sm transition-opacity animate-in fade-in"
+                    }),
+
+                    isDrawingOpen && _jsx('div', {
+                        className: "fixed inset-0 z-[100] bg-black flex flex-col animate-in fade-in duration-300",
+                        children: _jsxs(_Fragment, {
+                            children: [
+                                _jsx('div', {
+                                    className: "flex items-center justify-between p-4 sm:p-6 border-b border-white/10 bg-[#0a0a0a] z-10",
+                                    children: _jsxs(_Fragment, {
+                                        children: [
+                                            _jsxs('div', {
+                                                className: "flex items-center gap-4 sm:gap-6",
+                                                children: [
+                                                    _jsx('h3', {
+                                                        className: "hidden sm:block text-xl font-black italic tracking-widest text-white",
+                                                        children: "CANVAS STUDIO"
+                                                    }),
+                                                    _jsx('div', { className: "hidden sm:block h-6 w-px bg-white/20" }),
+                                                    _jsxs('div', {
+                                                        className: "flex items-center gap-4",
+                                                        children: [
+                                                            _jsx('span', {
+                                                                className: "text-[10px] font-mono text-white/50 uppercase tracking-widest hidden sm:inline",
+                                                                children: "Brush Size"
+                                                            }),
+                                                            _jsx('input', {
+                                                                type: "range",
+                                                                min: "2",
+                                                                max: "100",
+                                                                value: brushSize,
+                                                                onChange: (e) => setBrushSize(Number(e.target.value)),
+                                                                className: "w-24 sm:w-48 h-1 bg-white/20 rounded-full appearance-none cursor-pointer accent-white"
+                                                            }),
+                                                            _jsx('div', {
+                                                                className: "rounded-full bg-white border border-white/30 shadow-[0_0_10px_rgba(255,255,255,0.3)]",
+                                                                style: { width: brushSize, height: brushSize, maxHeight: '32px', maxWidth: '32px' }
+                                                            })
+                                                        ]
+                                                    })
+                                                ]
+                                            }),
+                                            _jsx('button', {
+                                                onClick: () => setIsDrawingOpen(false),
+                                                className: "p-2 hover:bg-white/10 rounded-full transition-colors text-white group",
+                                                children: _jsx('svg', {
+                                                    className: "w-8 h-8 group-hover:scale-110 transition-transform",
+                                                    fill: "none",
+                                                    viewBox: "0 0 24 24",
+                                                    stroke: "currentColor",
+                                                    children: _jsx('path', {
+                                                        strokeLinecap: "round",
+                                                        strokeLinejoin: "round",
+                                                        strokeWidth: 2,
+                                                        d: "M6 18L18 6M6 6l12 12"
+                                                    })
+                                                })
+                                            })
+                                        ]
+                                    })
+                                }),
+                                _jsx('div', {
+                                    className: "flex-1 bg-[#050505] relative overflow-hidden flex items-center justify-center p-4 sm:p-8",
+                                    children: _jsx('div', {
+                                        className: "relative w-full h-full border border-white/10 rounded-xl shadow-2xl bg-black overflow-hidden ring-1 ring-white/5",
+                                        children: _jsx('canvas', {
+                                            ref: drawCanvasRef,
+                                            onMouseDown: startDrawing,
+                                            onMouseMove: draw,
+                                            onMouseUp: stopDrawing,
+                                            onMouseLeave: stopDrawing,
+                                            onTouchStart: startDrawing,
+                                            onTouchMove: draw,
+                                            onTouchEnd: stopDrawing,
+                                            className: "w-full h-full block touch-none cursor-crosshair"
+                                        })
+                                    })
+                                }),
+                                _jsx('div', {
+                                    className: "p-4 sm:p-6 border-t border-white/10 bg-[#0a0a0a] flex justify-center gap-4 z-10",
+                                    children: _jsxs(_Fragment, {
+                                        children: [
+                                            _jsx('button', {
+                                                onClick: clearDrawing,
+                                                className: "px-8 py-3 bg-white/5 border border-white/10 rounded-xl text-white font-bold uppercase text-xs hover:bg-white/10 transition-all tracking-widest",
+                                                children: "Clear Canvas"
+                                            }),
+                                            _jsx('button', {
+                                                onClick: saveDrawing,
+                                                className: "px-8 py-3 bg-white text-black rounded-xl font-bold uppercase text-xs hover:bg-gray-200 shadow-[0_0_20px_rgba(255,255,255,0.2)] transition-all hover:scale-105 tracking-widest",
+                                                children: "Materialize Particles"
+                                            })
+                                        ]
+                                    })
+                                })
+                            ]
+                        })
+                    })
+                ]
+            });
+        }
+
+        // ============= MAIN APP =============
+        function App() {
+            const canvasRef = useRef(null);
+            const containerRef = useRef(null);
+            const requestRef = useRef(0);
+            const particlesRef = useRef([]);
+            
+            const [gameStarted, setGameStarted] = useState(false);
+            const [isExploding, setIsExploding] = useState(false);
+            
+            const configRef = useRef(DEFAULT_CONFIG);
+            const [configState, setConfigState] = useState(DEFAULT_CONFIG);
+            const mouseRef = useRef({ x: -2000, y: -2000, isPressed: false });
+            const [drawingData, setDrawingData] = useState(null);
+
+            const getPointsFromImageData = (imageData, targetWidth, targetHeight, particleCount) => {
+                const { width, height, data } = imageData;
+                const points = [];
+                
+                const corners = [0, (width - 1) * 4, (width * (height - 1)) * 4, (width * height - 1) * 4];
+                let isWhiteBg = true;
+                let isTransparentBg = false;
+                
+                for (const i of corners) {
+                    if (data[i + 3] < 50) {
+                        isTransparentBg = true;
+                        isWhiteBg = false;
+                        break;
+                    }
+                    const brightness = (data[i] + data[i + 1] + data[i + 2]) / 3;
+                    if (brightness < 240) {
+                        isWhiteBg = false;
+                    }
+                }
+
+                const isTarget = (i) => {
+                    const r = data[i];
+                    const g = data[i + 1];
+                    const b = data[i + 2];
+                    const a = data[i + 3];
+                    if (a < 100) return false;
+                    if (isWhiteBg) {
+                        const brightness = (r + g + b) / 3;
+                        return brightness < 235;
+                    } else if (isTransparentBg) {
+                        return true;
+                    } else {
+                        const brightness = (r + g + b) / 3;
+                        return brightness > 40;
+                    }
+                };
+
+                let validPixels = 0;
+                const sampleStep = 4;
+                for (let i = 0; i < data.length; i += 4 * sampleStep) {
+                    if (isTarget(i)) validPixels++;
+                }
+                
+                if (validPixels === 0) return [];
+
+                const estimatedTotal = validPixels * sampleStep;
+                let pixelStep = Math.floor(Math.sqrt(estimatedTotal / particleCount));
+                if (pixelStep < 1) pixelStep = 1;
+
+                const imageAspect = width / height;
+                const screenAspect = targetWidth / targetHeight;
+                let drawWidth, drawHeight, offsetX, offsetY;
+                const PADDING = 0.8;
+                
+                if (imageAspect > screenAspect) {
+                    drawWidth = targetWidth * PADDING;
+                    drawHeight = drawWidth / imageAspect;
+                } else {
+                    drawHeight = targetHeight * PADDING;
+                    drawWidth = drawHeight * imageAspect;
+                }
+                
+                offsetX = (targetWidth - drawWidth) / 2;
+                offsetY = (targetHeight - drawHeight) / 2;
+
+                for (let y = 0; y < height; y += pixelStep) {
+                    for (let x = 0; x < width; x += pixelStep) {
+                        const index = (y * width + x) * 4;
+                        if (isTarget(index)) {
+                            const u = x / width;
+                            const v = y / height;
+                            points.push({
+                                x: offsetX + u * drawWidth,
+                                y: offsetY + v * drawHeight
+                            });
+                        }
+                    }
+                }
+                
+                for (let i = points.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [points[i], points[j]] = [points[j], points[i]];
+                }
+                
+                return points;
+            };
+
+            const sampleTextPoints = (text, width, height, particleCount) => {
+                if (!text.trim()) return [];
+                if (width <= 0 || height <= 0) return [];
+
+                const offCanvas = document.createElement('canvas');
+                const offCtx = offCanvas.getContext('2d', { willReadFrequently: true });
+                if (!offCtx) return [];
+
+                const w = Math.floor(width);
+                const h = Math.floor(height);
+                offCanvas.width = w;
+                offCanvas.height = h;
+
+                const fontSize = Math.floor(Math.min(w / (text.length * 0.8), h * 0.35));
+                offCtx.fillStyle = 'white';
+                offCtx.textAlign = 'center';
+                offCtx.textBaseline = 'middle';
+                offCtx.font = `900 ${fontSize}px "Inter", "Arial Black", sans-serif`;
+                offCtx.fillText(text.toUpperCase(), w / 2, h / 2);
+
+                try {
+                    const imageData = offCtx.getImageData(0, 0, w, h);
+                    return getPointsFromImageData(imageData, w, h, particleCount);
+                } catch (e) {
+                    console.error("Error sampling text points:", e);
+                    return [];
+                }
+            };
+
+            const updateTextTargets = useCallback(() => {
+                if (!canvasRef.current) return;
+                const width = canvasRef.current.width / (window.devicePixelRatio || 1);
+                const height = canvasRef.current.height / (window.devicePixelRatio || 1);
+                const text = configRef.current.targetText;
+                const count = configRef.current.particleCount;
+                
+                let points = [];
+
+                if (drawingData) {
+                    points = getPointsFromImageData(drawingData, width, height, count);
+                } else if (text.trim()) {
+                    points = sampleTextPoints(text, width, height, count);
+                } else {
+                    particlesRef.current.forEach(p => p.setTarget(null, null));
+                    return;
+                }
+
+                if (points.length === 0) {
+                    particlesRef.current.forEach(p => p.setTarget(null, null));
+                    return;
+                }
+
+                particlesRef.current.forEach((p, i) => {
+                    const target = points[i % points.length];
+                    p.setTarget(target.x, target.y);
+                });
+            }, [drawingData]);
+
+            const syncParticleCount = useCallback((width, height, count) => {
+                const currentParticles = particlesRef.current;
+                if (currentParticles.length < count) {
+                    for (let i = currentParticles.length; i < count; i++) {
+                        currentParticles.push(new Particle(width, height));
+                    }
+                } else if (currentParticles.length > count) {
+                    particlesRef.current = currentParticles.slice(0, count);
+                }
+                updateTextTargets();
+            }, [updateTextTargets]);
+
+            useEffect(() => {
+                const canvas = canvasRef.current;
+                const container = containerRef.current;
+                if (!canvas || !container) return;
+
+                const dpr = Math.min(window.devicePixelRatio || 1, 2);
+                const rect = container.getBoundingClientRect();
+                
+                canvas.width = rect.width * dpr;
+                canvas.height = rect.height * dpr;
+                canvas.style.width = `${rect.width}px`;
+                canvas.style.height = `${rect.height}px`;
+
+                syncParticleCount(canvas.width / dpr, canvas.height / dpr, configRef.current.particleCount);
+
+                const handleResize = () => {
+                    const newRect = container.getBoundingClientRect();
+                    canvas.width = newRect.width * dpr;
+                    canvas.height = newRect.height * dpr;
+                    canvas.style.width = `${newRect.width}px`;
+                    canvas.style.height = `${newRect.height}px`;
+                    updateTextTargets();
+                };
+
+                window.addEventListener('resize', handleResize);
+                return () => window.removeEventListener('resize', handleResize);
+            }, [syncParticleCount, updateTextTargets]);
+
+            const animate = useCallback((timestamp) => {
+                const canvas = canvasRef.current;
+                if (!canvas) return;
+
+                const ctx = canvas.getContext('2d');
+                if (!ctx) return;
+
+                const dpr = Math.min(window.devicePixelRatio || 1, 2);
+                const width = canvas.width / dpr;
+                const height = canvas.height / dpr;
+                const config = configRef.current;
+
+                if (particlesRef.current.length !== config.particleCount) {
+                    syncParticleCount(width, height, config.particleCount);
+                }
+
+                const count = particlesRef.current.length;
+                const isHighPerf = count > 800;
+
+                ctx.globalCompositeOperation = 'source-over';
+                const styleTrail = config.style === 'ghost' ? 0.08 : config.trailOpacity;
+                ctx.fillStyle = `rgba(0, 0, 0, ${styleTrail})`;
+                ctx.fillRect(0, 0, width, height);
+
+                const particles = particlesRef.current;
+                
+                if (['water','sand','matrix','slime','cyber'].includes(config.style)) {
+                    ctx.globalCompositeOperation = 'source-over';
+                } else {
+                    ctx.globalCompositeOperation = 'screen';
+                }
+
+                const enableConnections = !isHighPerf && !['lightning','slime','cyber','matrix'].includes(config.style);
+                const connRadius = config.connectionRadius;
+                const connLimitSq = connRadius * connRadius;
+
+                for (let i = 0; i < particles.length; i++) {
+                    const p1 = particles[i];
+                    p1.update(width, height, mouseRef.current, config, timestamp);
+                    
+                    if (enableConnections) {
+                        const neighborMax = Math.min(i + 5, particles.length);
+                        for (let j = i + 1; j < neighborMax; j++) {
+                            const p2 = particles[j];
+                            const dx = p1.x - p2.x;
+                            const dy = p1.y - p2.y;
+                            const distSq = dx * dx + dy * dy;
+
+                            if (distSq < connLimitSq) {
+                                const dist = Math.sqrt(distSq);
+                                const alpha = (1 - (dist / connRadius)) * 0.5;
+                                ctx.beginPath();
+                                
+                                if (config.style === 'fire') {
+                                    ctx.strokeStyle = `hsla(20, 100%, 60%, ${alpha})`;
+                                    ctx.lineWidth = alpha * 1.5;
+                                } else if (config.style === 'water') {
+                                    ctx.strokeStyle = `hsla(220, 80%, 50%, ${alpha})`;
+                                    ctx.lineWidth = alpha * 1.5;
+                                } else if (config.style === 'pollen') {
+                                    ctx.strokeStyle = `hsla(50, 90%, 60%, ${alpha})`;
+                                    ctx.lineWidth = alpha * 1.5;
+                                } else if (config.style === 'ghost') {
+                                    ctx.strokeStyle = `hsla(0, 0%, 100%, ${alpha * 0.5})`;
+                                    ctx.lineWidth = alpha;
+                                } else if (config.style !== 'snow') {
+                                    const hue = (config.baseHue + p1.hue * 0.2) % 360;
+                                    ctx.strokeStyle = `hsla(${hue}, 80%, 65%, ${alpha})`;
+                                    ctx.lineWidth = alpha * 1.5;
+                                }
+                                
+                                ctx.moveTo(p1.x, p1.y);
+                                ctx.lineTo(p2.x, p2.y);
+                                ctx.stroke();
+                            }
+                        }
+                    }
+                    
+                    p1.draw(ctx, config, isHighPerf);
+                }
+
+                requestRef.current = requestAnimationFrame(animate);
+            }, [syncParticleCount]);
+
+            useEffect(() => {
+                requestRef.current = requestAnimationFrame(animate);
+                return () => cancelAnimationFrame(requestRef.current);
+            }, [animate]);
+
+            const updateMousePos = (e) => {
+                const rect = canvasRef.current?.getBoundingClientRect();
+                if (!rect) return;
+                const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+                mouseRef.current.x = clientX - rect.left;
+                mouseRef.current.y = clientY - rect.top;
+            };
+
+            const updateConfig = (key, value) => {
+                const newConfig = { ...configRef.current, [key]: value };
+                configRef.current = newConfig;
+                setConfigState(newConfig);
+                
+                if (key === 'targetText') {
+                    if (value) {
+                        setDrawingData(null);
+                    }
+                } else if (key === 'particleCount' || key === 'style') {
+                    updateTextTargets();
+                }
+            };
+
+            useEffect(() => {
+                updateTextTargets();
+            }, [configState.targetText, drawingData, updateTextTargets]);
+
+            const handleStartGame = () => {
+                setIsExploding(true);
+                particlesRef.current.forEach(p => p.explode());
+                setTimeout(() => {
+                    updateConfig('targetText', '');
+                    setGameStarted(true);
+                }, 100);
+            };
+
+            return _jsx('div', {
+                ref: containerRef,
+                className: "relative w-full h-full bg-black overflow-hidden select-none font-sans",
+                children: _jsxs(_Fragment, {
+                    children: [
+                        _jsx('canvas', {
+                            ref: canvasRef,
+                            className: "block touch-none",
+                            onMouseMove: updateMousePos,
+                            onMouseDown: () => mouseRef.current.isPressed = true,
+                            onMouseUp: () => mouseRef.current.isPressed = false,
+                            onTouchMove: updateMousePos,
+                            onTouchStart: (e) => {
+                                mouseRef.current.isPressed = true;
+                                updateMousePos(e);
+                            },
+                            onTouchEnd: () => mouseRef.current.isPressed = false
+                        }),
+                        
+                        !gameStarted && _jsx('div', {
+                            className: `absolute inset-0 flex flex-col items-center justify-end pb-24 z-50 transition-opacity duration-1000 ${
+                                isExploding ? 'opacity-0 pointer-events-none' : 'opacity-100'
+                            }`,
+                            children: _jsx('div', {
+                                className: "flex flex-col items-center gap-6 animate-in fade-in zoom-in duration-1000",
+                                children: _jsxs(_Fragment, {
+                                    children: [
+                                        _jsx('button', {
+                                            onClick: handleStartGame,
+                                            className: "group relative px-12 py-4 bg-transparent border border-white/20 backdrop-blur-sm text-white font-black tracking-[0.5em] text-sm hover:bg-white hover:text-black hover:scale-105 transition-all duration-500 rounded-sm overflow-hidden",
+                                            children: _jsxs(_Fragment, {
+                                                children: [
+                                                    _jsx('span', { className: "relative z-10", children: "ENTER SYSTEM" }),
+                                                    _jsx('div', { className: "absolute inset-0 h-full w-full bg-white/10 translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-out" })
+                                                ]
+                                            })
+                                        }),
+                                        _jsx('p', {
+                                            className: "text-[10px] text-white/30 tracking-[0.8em] font-mono uppercase",
+                                            children: "Interactive Particle Physics"
+                                        })
+                                    ]
+                                })
+                            })
+                        }),
+                        
+                        gameStarted && _jsxs(_Fragment, {
+                            children: [
+                                _jsx(ControlPanel, {
+                                    config: configState,
+                                    onUpdate: updateConfig,
+                                    onExplode: () => {
+                                        updateConfig('targetText', '');
+                                        setDrawingData(null);
+                                        particlesRef.current.forEach(p => p.explode());
+                                    },
+                                    onSave: () => {
+                                        const link = document.createElement('a');
+                                        link.download = `flux-art-${configState.style}.png`;
+                                        link.href = canvasRef.current?.toDataURL() || '';
+                                        link.click();
+                                    },
+                                    onDrawingSave: (data) => {
+                                        setDrawingData(data);
+                                    }
+                                }),
+                                _jsx('div', {
+                                    className: "fixed pointer-events-none rounded-full border border-white/30 -translate-x-1/2 -translate-y-1/2 z-10 hidden sm:block mix-blend-screen",
+                                    style: {
+                                        width: mouseRef.current.isPressed ? 60 : 20,
+                                        height: mouseRef.current.isPressed ? 60 : 20,
+                                        left: mouseRef.current.x,
+                                        top: mouseRef.current.y,
+                                        transition: 'width 0.15s, height 0.15s',
+                                        backgroundColor: mouseRef.current.isPressed
+                                            ? (configState.interactionMode === 'repel' ? 'rgba(255,50,50,0.2)' : 'rgba(255,255,255,0.1)')
+                                            : 'transparent',
+                                        boxShadow: configState.interactionMode === 'repel' && mouseRef.current.isPressed
+                                            ? '0 0 30px rgba(255,50,50,0.4)'
+                                            : '0 0 15px rgba(255,255,255,0.3)'
+                                    }
+                                }),
+                                _jsxs('div', {
+                                    className: "absolute bottom-10 left-10 pointer-events-none opacity-50 flex flex-col animate-in fade-in slide-in-from-bottom-10 duration-1000",
+                                    children: [
+                                        _jsx('span', {
+                                            className: "text-white text-6xl font-black italic tracking-tighter uppercase leading-none mix-blend-difference",
+                                            children: configState.style
+                                        }),
+                                        _jsx('div', { className: "h-1.5 w-full bg-white mt-2 shadow-lg" })
+                                    ]
+                                })
+                            ]
+                        })
+                    ]
+                })
+            });
+        }
+
+        const rootElement = document.getElementById('root');
+        const root = ReactDOM.createRoot(rootElement);
+        root.render(_jsx(App, {}));
+    </script>
+</body>
+</html>

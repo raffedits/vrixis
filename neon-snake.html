@@ -1,0 +1,739 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Neon Snake 3D</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@500;700&display=swap" rel="stylesheet">
+    
+    <style>
+        body, html { 
+            margin: 0; 
+            padding: 0; 
+            width: 100%; 
+            height: 100%; 
+            overflow: hidden; 
+            background-color: #050505; 
+        }
+        #root { 
+            width: 100%; 
+            height: 100%; 
+        }
+        canvas { 
+            touch-action: none; 
+        }
+        
+        .scanlines {
+            background: linear-gradient(
+                to bottom,
+                rgba(255,255,255,0),
+                rgba(255,255,255,0) 50%,
+                rgba(0,0,0,0.1) 50%,
+                rgba(0,0,0,0.1)
+            );
+            background-size: 100% 4px;
+            position: absolute;
+            pointer-events: none;
+            inset: 0;
+            z-index: 50;
+            opacity: 0.6;
+        }
+        
+        .scrollbar-hide::-webkit-scrollbar {
+            display: none;
+        }
+        .scrollbar-hide {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+    
+    <script type="importmap">
+    {
+        "imports": {
+            "react": "https://esm.sh/react@18.2.0",
+            "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+            "react/jsx-runtime": "https://esm.sh/react@18.2.0/jsx-runtime",
+            "@react-three/fiber": "https://esm.sh/@react-three/fiber@8.15.12?deps=react@18.2.0,three@0.160.0",
+            "@react-three/drei": "https://esm.sh/@react-three/drei@9.92.7?deps=react@18.2.0,three@0.160.0,@react-three/fiber@8.15.12",
+            "@react-three/postprocessing": "https://esm.sh/@react-three/postprocessing@2.16.2?deps=react@18.2.0,three@0.160.0,@react-three/fiber@8.15.12,postprocessing@6.34.3",
+            "three": "https://esm.sh/three@0.160.0",
+            "postprocessing": "https://esm.sh/postprocessing@6.34.3?deps=three@0.160.0"
+        }
+    }
+    </script>
+    
+    <script type="module">
+        import React, { useState, useEffect, useRef, useMemo, Suspense } from 'react';
+        import ReactDOM from 'react-dom/client';
+        import { Canvas, useFrame, useThree } from '@react-three/fiber';
+        import { Grid, Stars, RoundedBox, Octahedron, Box as DreiBox, Tetrahedron } from '@react-three/drei';
+        import { EffectComposer, Bloom } from '@react-three/postprocessing';
+        import * as THREE from 'three';
+
+        const { createElement: h, Fragment } = React;
+
+        // ===== CONSTANTS =====
+        const INITIAL_LENGTH = 5;
+        const SEGMENT_DISTANCE = 0.5; // Segmenti VICINI come originale
+        const TURN_SPEED = 6.0;
+        const SNAKE_RADIUS = 0.25;
+        const FOOD_RADIUS = 0.5;
+
+        const FIELD_SIZES = { SMALL: 16, MEDIUM: 28, LARGE: 40 };
+        const SPEEDS = { EASY: 5.0, NORMAL: 9.0, HARD: 14.0 };
+
+        const GAME_MODES = {
+            CLASSIC: { label: "CLASSIC", desc: "Standard walls. Do not crash." },
+            NO_WALLS: { label: "INFINITE", desc: "No walls. Wrap around the grid." },
+            REVERSED: { label: "MIRROR", desc: "Controls are inverted. Brain twist." },
+            SPEED_RAMP: { label: "ADRENALINE", desc: "Speed increases with every meal." }
+        };
+
+        const SNAKE_COLORS = {
+            CYAN: { head: "#00ffff", body: "#0088ff" },
+            NEON_GREEN: { head: "#39ff14", body: "#008f11" },
+            HOT_PINK: { head: "#ff0099", body: "#bc13fe" },
+            GOLD: { head: "#ffd700", body: "#ff8c00" },
+            PLASMA_PURPLE: { head: "#bd00ff", body: "#6600cc" }
+        };
+
+        const FRUIT_STYLES = {
+            CYBER_ORB: { color: "#ff0080", label: "Cyber Orb" },
+            DATA_CUBE: { color: "#ff3333", label: "Red Data" },
+            QUANTUM_PYRAMID: { color: "#ffff00", label: "Gold Bit" },
+            RANDOM: { color: "#ffffff", label: "Chaos Mix" }
+        };
+
+        const COLOR_GRID = "#1a1a1a";
+        const GameStatus = { IDLE: 'IDLE', CONFIG: 'CONFIG', PLAYING: 'PLAYING', GAME_OVER: 'GAME_OVER' };
+
+        // ===== ARENA =====
+        function Arena({ size, mode }) {
+            const boundaryLimit = size / 2;
+            const thickness = 0.1;
+            const height = 0.15;
+            const neonRed = new THREE.Color(3, 0, 0);
+            const wallsVisible = mode !== 'NO_WALLS';
+
+            return h('group', { position: [0, -0.01, 0] },
+                h(Grid, {
+                    position: [0, 0, 0],
+                    args: [size, size],
+                    cellColor: COLOR_GRID,
+                    sectionColor: COLOR_GRID,
+                    sectionThickness: 1.5,
+                    cellThickness: 0.6,
+                    fadeDistance: size * 1.5,
+                    infiniteGrid: false
+                }),
+                h('mesh', { rotation: [-Math.PI / 2, 0, 0], position: [0, -0.1, 0] },
+                    h('planeGeometry', { args: [size * 2, size * 2] }),
+                    h('meshStandardMaterial', { color: "#000", roughness: 0.1, metalness: 0.8 })
+                ),
+                wallsVisible && h('group', { position: [0, height/2, 0] },
+                    h('mesh', { position: [0, 0, -boundaryLimit] },
+                        h('boxGeometry', { args: [size + thickness, height, thickness] }),
+                        h('meshBasicMaterial', { color: neonRed, toneMapped: false })
+                    ),
+                    h('mesh', { position: [0, 0, boundaryLimit] },
+                        h('boxGeometry', { args: [size + thickness, height, thickness] }),
+                        h('meshBasicMaterial', { color: neonRed, toneMapped: false })
+                    ),
+                    h('mesh', { position: [-boundaryLimit, 0, 0] },
+                        h('boxGeometry', { args: [thickness, height, size + thickness] }),
+                        h('meshBasicMaterial', { color: neonRed, toneMapped: false })
+                    ),
+                    h('mesh', { position: [boundaryLimit, 0, 0] },
+                        h('boxGeometry', { args: [thickness, height, size + thickness] }),
+                        h('meshBasicMaterial', { color: neonRed, toneMapped: false })
+                    )
+                )
+            );
+        }
+
+        // ===== CAMERA =====
+        function CameraController({ snakeRef }) {
+            const { camera } = useThree();
+            const targetPos = useRef(new THREE.Vector3(0, 0, 0));
+            const HEIGHT = 14, DISTANCE = 8;
+
+            useFrame((state, delta) => {
+                if (!snakeRef.current || snakeRef.current.length === 0) return;
+                const head = snakeRef.current[0];
+                const headX = head.x, headZ = -head.y;
+                targetPos.current.lerp(new THREE.Vector3(headX, 0, headZ), delta * 8);
+                const desiredPos = new THREE.Vector3(targetPos.current.x, HEIGHT, targetPos.current.z + DISTANCE);
+                camera.position.lerp(desiredPos, delta * 4);
+                camera.lookAt(targetPos.current.x, 0, targetPos.current.z - 2);
+            });
+            return null;
+        }
+
+        // ===== SNAKE =====
+        function Snake3D({ snakeRef, snakeLength, colorType, status }) {
+            const MAX_SEGMENTS = 200;
+            const meshRefs = useRef([]);
+            const colors = useMemo(() => {
+                const palette = SNAKE_COLORS[colorType];
+                const arr = [];
+                const headColor = new THREE.Color(palette.head);
+                const bodyColor = new THREE.Color(palette.body);
+                for (let i = 0; i < MAX_SEGMENTS; i++) {
+                    if (i === 0) arr.push(headColor);
+                    else { const c = bodyColor.clone(); c.offsetHSL(i * 0.002, 0, -i * 0.001); arr.push(c); }
+                }
+                return arr;
+            }, [colorType]);
+
+            useFrame(() => {
+                const snake = snakeRef.current;
+                if (!snake || snake.length === 0) return;
+                
+                // NASCONDERE snake se NON si sta giocando
+                const isPlaying = status === 'PLAYING';
+                
+                for (let i = 0; i < snakeLength; i++) {
+                    const mesh = meshRefs.current[i];
+                    const currentPos = snake[i];
+                    if (mesh && currentPos) {
+                        const x = currentPos.x, z = -currentPos.y, y = SNAKE_RADIUS;
+                        mesh.position.set(x, y, z);
+                        if (i === 0) {
+                            const neck = snake[1];
+                            if (neck) { const dirX = currentPos.x - neck.x; const dirY = currentPos.y - neck.y; mesh.lookAt(x + dirX, y, z - dirY); }
+                        } else {
+                            const front = snake[i - 1];
+                            if (front) mesh.lookAt(front.x, y, -front.y);
+                        }
+                        mesh.visible = isPlaying; // VISIBILE SOLO DURANTE IL GIOCO
+                        // Cubetti PIÙ PICCOLI per creare gap visibili tra loro
+                        const scale = i === 0 ? 0.85 : 0.70; // Più piccoli = gap visibile
+                        mesh.scale.setScalar(scale);
+                    }
+                }
+                for (let i = snakeLength; i < MAX_SEGMENTS; i++) {
+                    const mesh = meshRefs.current[i];
+                    if (mesh) mesh.visible = false;
+                }
+            });
+
+            const boxSize = 0.5; // Box più grandi e visibili
+            return h('group', null, Array.from({ length: MAX_SEGMENTS }).map((_, i) =>
+                h(RoundedBox, { key: i, ref: (el) => { meshRefs.current[i] = el; }, args: [boxSize, boxSize, boxSize], radius: 0.05, smoothness: 2, visible: false },
+                    h('meshStandardMaterial', { 
+                        color: colors[i], 
+                        emissive: colors[i], 
+                        emissiveIntensity: 3.5,
+                        roughness: 0.2, 
+                        metalness: 0.8, 
+                        toneMapped: false 
+                    })
+                )
+            ));
+        }
+
+        // ===== FOOD =====
+        function SingleFood({ index, positionRef, fruitType }) {
+            const meshRef = useRef(null);
+            const lastPos = useRef(new THREE.Vector3(999, 999, 999));
+            const appearance = useMemo(() => {
+                let type = fruitType;
+                if (type === 'RANDOM') {
+                    const types = ['CYBER_ORB', 'DATA_CUBE', 'QUANTUM_PYRAMID'];
+                    type = types[index % types.length];
+                }
+                let color = FRUIT_STYLES[type]?.color || "#fff";
+                return { type, color: new THREE.Color(color) };
+            }, [fruitType, index]);
+
+            useFrame((state, delta) => {
+                if (!meshRef.current) return;
+                const foods = positionRef.current;
+                if (index >= foods.length) { meshRef.current.visible = false; return; }
+                const currentFood = foods[index];
+                const targetX = currentFood.x, targetZ = -currentFood.y;
+                meshRef.current.visible = true;
+                if (Math.abs(targetX - lastPos.current.x) > 0.1 || Math.abs(targetZ - lastPos.current.z) > 0.1) {
+                    lastPos.current.set(targetX, 0, targetZ);
+                    meshRef.current.scale.set(0, 0, 0);
+                }
+                meshRef.current.position.x = targetX;
+                meshRef.current.position.z = targetZ;
+                const t = state.clock.getElapsedTime() + index;
+                meshRef.current.position.y = FOOD_RADIUS + Math.sin(t * 3) * 0.2;
+                meshRef.current.rotation.y += delta * 2;
+                meshRef.current.rotation.z = Math.sin(t * 2) * 0.2;
+                meshRef.current.scale.lerp(new THREE.Vector3(1, 1, 1), delta * 10);
+            });
+
+            const mat = h('meshStandardMaterial', { color: appearance.color, emissive: appearance.color, emissiveIntensity: 4, toneMapped: false });
+            if (appearance.type === 'DATA_CUBE') return h(DreiBox, { ref: meshRef, args: [FOOD_RADIUS * 1.5, FOOD_RADIUS * 1.5, FOOD_RADIUS * 1.5] }, mat);
+            if (appearance.type === 'QUANTUM_PYRAMID') return h(Tetrahedron, { ref: meshRef, args: [FOOD_RADIUS * 1.8, 0] }, mat);
+            return h(Octahedron, { ref: meshRef, args: [FOOD_RADIUS, 0] }, mat);
+        }
+
+        function Food3D({ foodsRef, fruitType }) {
+            return h('group', null, Array.from({ length: 5 }).map((_, i) =>
+                h(SingleFood, { key: i, index: i, positionRef: foodsRef, fruitType })
+            ));
+        }
+
+        // ===== GAME CANVAS =====
+        function GameCanvas({ snakeRef, foodsRef, snakeLength, status, settings }) {
+            return h(Canvas, { 
+                shadows: false, 
+                dpr: window.devicePixelRatio > 2 ? 1.5 : window.devicePixelRatio, 
+                className: "bg-[#050505]", 
+                frameloop: "always",
+                performance: { min: 0.5 }
+            },
+                h('ambientLight', { intensity: 0.4, color: "#111" }),
+                h('pointLight', { position: [10, 10, 10], intensity: 1, color: "#0ff" }),
+                h('pointLight', { position: [-10, 10, -10], intensity: 0.5, color: "#f0f" }),
+                h(Stars, { radius: 100, depth: 50, count: 3000, factor: 4, saturation: 0, fade: true, speed: 1 }),
+                h(Arena, { size: FIELD_SIZES[settings.fieldSize], mode: settings.gameMode }),
+                h(Suspense, { fallback: null },
+                    h(Snake3D, { snakeRef, snakeLength, colorType: settings.snakeColor, status }),
+                    h(Food3D, { foodsRef, fruitType: settings.fruitType })
+                ),
+                h(CameraController, { snakeRef }),
+                h(EffectComposer, { disableNormalPass: true },
+                    h(Bloom, { luminanceThreshold: 0.15, mipmapBlur: true, intensity: 2.0, radius: 0.7 })
+                )
+            );
+        }
+
+        // ===== MAIN APP =====
+        function App() {
+            const [status, setStatus] = useState(GameStatus.IDLE);
+            const [score, setScore] = useState(0);
+            const [highScore, setHighScore] = useState(0);
+            const [snakeLength, setSnakeLength] = useState(INITIAL_LENGTH);
+            const [configTab, setConfigTab] = useState('SYSTEM');
+            const [settings, setSettings] = useState({
+                fieldSize: 'MEDIUM',
+                difficulty: 'NORMAL',
+                speed: SPEEDS.NORMAL,
+                gameMode: 'CLASSIC',
+                snakeColor: 'CYAN',
+                foodCount: 1,
+                fruitType: 'CYBER_ORB'
+            });
+
+            const snakeRef = useRef([]);
+            const foodsRef = useRef([]);
+            const directionRef = useRef({ x: 0, y: 1 });
+            const targetAngleRef = useRef(Math.PI / 2);
+            const frameIdRef = useRef(0);
+            const lastTimeRef = useRef(0);
+            const settingsRef = useRef(settings);
+
+            useEffect(() => {
+                settingsRef.current = settings;
+                settingsRef.current.speed = SPEEDS[settings.difficulty];
+            }, [settings]);
+
+            const getCurrentGridSize = () => FIELD_SIZES[settingsRef.current.fieldSize];
+
+            const getRandomPosition = () => {
+                const size = getCurrentGridSize();
+                const limit = (size / 2) - 2;
+                return { x: (Math.random() * limit * 2) - limit, y: (Math.random() * limit * 2) - limit };
+            };
+
+            const initSnake = () => {
+                const start = [];
+                for (let i = 0; i < INITIAL_LENGTH; i++) start.push({ x: 0, y: -i * SEGMENT_DISTANCE });
+                snakeRef.current = start;
+                directionRef.current = { x: 0, y: 1 };
+                targetAngleRef.current = Math.PI / 2;
+                setSnakeLength(INITIAL_LENGTH);
+            };
+
+            const initFoods = () => {
+                const count = settingsRef.current.foodCount;
+                const newFoods = [];
+                for (let i = 0; i < count; i++) newFoods.push(getRandomPosition());
+                foodsRef.current = newFoods;
+            };
+
+            useEffect(() => {
+                const saved = localStorage.getItem('neon-snake-highscore-3d');
+                if (saved) setHighScore(parseInt(saved, 10));
+                initSnake();
+                initFoods();
+            }, []);
+
+            const openConfig = () => setStatus(GameStatus.CONFIG);
+
+            const startGame = () => {
+                initSnake();
+                initFoods();
+                setScore(0);
+                setStatus(GameStatus.PLAYING);
+                lastTimeRef.current = performance.now();
+            };
+
+            const gameOver = () => {
+                setStatus(GameStatus.GAME_OVER);
+                if (score > highScore) {
+                    setHighScore(score);
+                    localStorage.setItem('neon-snake-highscore-3d', score.toString());
+                }
+            };
+
+            const goToMenu = () => {
+                setStatus(GameStatus.IDLE);
+                setScore(0);
+                initSnake();
+            };
+
+            const handleInput = (clientX, clientY) => {
+                if (status !== GameStatus.PLAYING) return;
+                const cx = window.innerWidth / 2;
+                const cy = window.innerHeight / 2;
+                const dx = clientX - cx;
+                const dy = -(clientY - cy);
+                if (Math.hypot(dx, dy) > 10) {
+                    let angle = Math.atan2(dy, dx);
+                    if (settingsRef.current.gameMode === 'REVERSED') angle += Math.PI;
+                    targetAngleRef.current = angle;
+                }
+            };
+
+            const handleTouchMove = (e) => handleInput(e.touches[0].clientX, e.touches[0].clientY);
+            const handleMouseMove = (e) => { if (e.buttons > 0) handleInput(e.clientX, e.clientY); };
+
+            useEffect(() => {
+                const handleKey = (e) => {
+                    if (status !== GameStatus.PLAYING) return;
+                    let angle = targetAngleRef.current;
+                    const step = Math.PI / 2;
+                    const modifier = settingsRef.current.gameMode === 'REVERSED' ? -1 : 1;
+                    if (e.key === 'ArrowLeft') angle += step * modifier;
+                    if (e.key === 'ArrowRight') angle -= step * modifier;
+                    targetAngleRef.current = angle;
+                };
+                window.addEventListener('keydown', handleKey);
+                return () => window.removeEventListener('keydown', handleKey);
+            }, [status]);
+
+            const getDistance = (v1, v2) => Math.hypot(v2.x - v1.x, v2.y - v1.y);
+
+            const update = (time) => {
+                if (status !== GameStatus.PLAYING) return;
+                const dt = Math.min((time - lastTimeRef.current) / 1000, 0.05); // Ridotto cap per physics più stabili
+                lastTimeRef.current = time;
+                const snake = snakeRef.current;
+                const head = { ...snake[0] };
+                const currentAngle = Math.atan2(directionRef.current.y, directionRef.current.x);
+                let targetAngle = targetAngleRef.current;
+                let angleDiff = targetAngle - currentAngle;
+                while (angleDiff > Math.PI) angleDiff -= 2 * Math.PI;
+                while (angleDiff < -Math.PI) angleDiff += 2 * Math.PI;
+                const turnAmount = Math.sign(angleDiff) * Math.min(Math.abs(angleDiff), TURN_SPEED * dt);
+                const newAngle = currentAngle + turnAmount;
+                directionRef.current = { x: Math.cos(newAngle), y: Math.sin(newAngle) };
+                let currentSpeed = settingsRef.current.speed;
+                if (settingsRef.current.gameMode === 'SPEED_RAMP') {
+                    const speedBoost = Math.floor(score / 5) * 0.5;
+                    currentSpeed += speedBoost;
+                }
+                head.x += directionRef.current.x * currentSpeed * dt;
+                head.y += directionRef.current.y * currentSpeed * dt;
+                const gridSize = getCurrentGridSize();
+                const limit = gridSize / 2;
+                if (settingsRef.current.gameMode === 'NO_WALLS') {
+                    if (head.x > limit) head.x = -limit;
+                    if (head.x < -limit) head.x = limit;
+                    if (head.y > limit) head.y = -limit;
+                    if (head.y < -limit) head.y = limit;
+                } else {
+                    // Collisione con muri - dare margine più grande per evitare falsi positivi
+                    if (Math.abs(head.x) > limit - 0.3 || Math.abs(head.y) > limit - 0.3) {
+                        gameOver();
+                        return;
+                    }
+                }
+                const newSnake = [head];
+                for (let i = 1; i < snakeLength; i++) {
+                    const prev = newSnake[i - 1];
+                    const current = snake[i - 1];
+                    const dist = getDistance(prev, current);
+                    if (dist > SEGMENT_DISTANCE) {
+                        const ratio = SEGMENT_DISTANCE / dist;
+                        newSnake.push({ x: prev.x + (current.x - prev.x) * ratio, y: prev.y + (current.y - prev.y) * ratio });
+                    } else {
+                        newSnake.push({ ...current });
+                    }
+                }
+                // Collisione con se stesso - controllare solo dopo il 6° segmento con tolleranza maggiore
+                for (let i = 6; i < newSnake.length; i++) {
+                    if (getDistance(head, newSnake[i]) < SNAKE_RADIUS * 0.8) {
+                        gameOver();
+                        return;
+                    }
+                }
+                snakeRef.current = newSnake;
+                const foods = foodsRef.current;
+                let foodEaten = false;
+                for (let i = 0; i < foods.length; i++) {
+                    if (getDistance(head, foods[i]) < SNAKE_RADIUS + FOOD_RADIUS) {
+                        foods[i] = getRandomPosition();
+                        setSnakeLength(prev => prev + 1);
+                        setScore(prev => prev + 1);
+                        foodEaten = true;
+                    }
+                }
+                frameIdRef.current = requestAnimationFrame(update);
+            };
+
+            useEffect(() => {
+                if (status === GameStatus.PLAYING) {
+                    lastTimeRef.current = performance.now();
+                    frameIdRef.current = requestAnimationFrame(update);
+                } else {
+                    cancelAnimationFrame(frameIdRef.current);
+                }
+                return () => cancelAnimationFrame(frameIdRef.current);
+            }, [status, snakeLength, score]);
+
+            // ConfigButton Component
+            const ConfigButton = ({ selected, onClick, label, colorClass = "cyan" }) => 
+                h('button', {
+                    onClick,
+                    className: `flex-1 py-2 px-1 border transform transition-all duration-200 skew-x-[-10deg] font-['Orbitron'] font-bold text-[0.6rem] md:text-xs tracking-wider ${
+                        selected 
+                            ? `bg-${colorClass}-500 text-black border-${colorClass}-400 scale-105 shadow-[0_0_15px_rgba(255,255,255,0.3)]` 
+                            : `bg-transparent text-${colorClass}-500/50 border-${colorClass}-500/20 hover:border-${colorClass}-500/60 hover:text-${colorClass}-400`
+                    }`
+                },
+                    h('span', { className: "skew-x-[10deg] block truncate" }, label)
+                );
+
+            const renderConfigMenu = () => 
+                h('div', { className: "relative z-50 w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-black/95 backdrop-blur-xl border border-cyan-500/30 rounded-lg p-5 shadow-[0_0_50px_rgba(0,255,255,0.1)] flex flex-col gap-4 scrollbar-hide" },
+                    h('div', { className: "text-center space-y-1" },
+                        h('h2', { className: "text-2xl md:text-3xl font-['Orbitron'] font-black text-white tracking-[0.2em] uppercase" }, "System Config"),
+                        h('div', { className: "text-cyan-500/50 font-mono text-[0.65rem]" }, "CONFIGURE PARAMETERS // PREPARE DEPLOYMENT")
+                    ),
+                    h('div', { className: "flex w-full border-b border-gray-800" },
+                        h('button', {
+                            onClick: () => setConfigTab('SYSTEM'),
+                            className: `flex-1 py-2 font-['Rajdhani'] font-bold tracking-widest text-sm transition-colors ${configTab === 'SYSTEM' ? 'text-cyan-400 border-b-2 border-cyan-400 bg-cyan-900/10' : 'text-gray-600 hover:text-gray-400'}`
+                        }, "CORE SYSTEMS"),
+                        h('button', {
+                            onClick: () => setConfigTab('ENTITY'),
+                            className: `flex-1 py-2 font-['Rajdhani'] font-bold tracking-widest text-sm transition-colors ${configTab === 'ENTITY' ? 'text-pink-400 border-b-2 border-pink-400 bg-pink-900/10' : 'text-gray-600 hover:text-gray-400'}`
+                        }, "ENTITY CONFIG")
+                    ),
+                    h('div', { className: "grid gap-5 py-2" },
+                        configTab === 'SYSTEM' && h(Fragment, null,
+                            h('div', { className: "space-y-2" },
+                                h('label', { className: "text-cyan-400 font-['Rajdhani'] font-bold tracking-widest text-xs uppercase" }, "Operation Mode"),
+                                h('div', { className: "grid grid-cols-2 md:grid-cols-4 gap-2" },
+                                    Object.keys(GAME_MODES).map((mode) =>
+                                        h(ConfigButton, { key: mode, selected: settings.gameMode === mode, onClick: () => setSettings(s => ({...s, gameMode: mode})), label: GAME_MODES[mode].label, colorClass: "cyan" })
+                                    )
+                                ),
+                                h('div', { className: "text-[0.6rem] text-cyan-500/60 font-mono bg-cyan-900/10 p-1.5 rounded border border-cyan-500/20" },
+                                    "Info: " + GAME_MODES[settings.gameMode].desc
+                                )
+                            ),
+                            h('div', { className: "space-y-2" },
+                                h('label', { className: "text-cyan-400 font-['Rajdhani'] font-bold tracking-widest text-xs uppercase" }, "Field Magnitude"),
+                                h('div', { className: "flex gap-2" },
+                                    ['SMALL', 'MEDIUM', 'LARGE'].map((size) =>
+                                        h(ConfigButton, { key: size, selected: settings.fieldSize === size, onClick: () => setSettings(s => ({...s, fieldSize: size})), label: size, colorClass: "cyan" })
+                                    )
+                                )
+                            ),
+                            h('div', { className: "space-y-2" },
+                                h('label', { className: "text-cyan-400 font-['Rajdhani'] font-bold tracking-widest text-xs uppercase" }, "Processing Speed"),
+                                h('div', { className: "flex gap-2" },
+                                    ['EASY', 'NORMAL', 'HARD'].map((diff) =>
+                                        h(ConfigButton, { key: diff, selected: settings.difficulty === diff, onClick: () => setSettings(s => ({...s, difficulty: diff})), label: diff, colorClass: "cyan" })
+                                    )
+                                )
+                            )
+                        ),
+                        configTab === 'ENTITY' && h(Fragment, null,
+                            h('div', { className: "space-y-2" },
+                                h('label', { className: "text-pink-400 font-['Rajdhani'] font-bold tracking-widest text-xs uppercase" }, "Chassis Color"),
+                                h('div', { className: "flex gap-2 overflow-x-auto pb-2" },
+                                    Object.keys(SNAKE_COLORS).map((color) =>
+                                        h('button', {
+                                            key: color,
+                                            onClick: () => setSettings(s => ({...s, snakeColor: color})),
+                                            className: `relative group flex-shrink-0 w-10 h-10 rounded-lg border-2 transition-all duration-300 ${settings.snakeColor === color ? 'border-white scale-110' : 'border-gray-700 opacity-60 hover:opacity-100'}`,
+                                            style: { backgroundColor: SNAKE_COLORS[color].body }
+                                        },
+                                            settings.snakeColor === color && h('div', { className: "absolute inset-0 bg-white/30 animate-pulse rounded-lg" })
+                                        )
+                                    )
+                                )
+                            ),
+                            h('div', { className: "space-y-2" },
+                                h('label', { className: "text-pink-400 font-['Rajdhani'] font-bold tracking-widest text-xs uppercase" }, "Target Data Type"),
+                                h('div', { className: "flex items-center gap-4" },
+                                    h('div', { className: "flex-1 grid grid-cols-2 gap-2" },
+                                        Object.keys(FRUIT_STYLES).map((type) =>
+                                            h(ConfigButton, { key: type, selected: settings.fruitType === type, onClick: () => setSettings(s => ({...s, fruitType: type})), label: FRUIT_STYLES[type].label, colorClass: "pink" })
+                                        )
+                                    ),
+                                    h('div', { className: "w-16 h-16 bg-black/50 border border-gray-700 rounded flex items-center justify-center relative overflow-hidden" },
+                                        h('div', { className: "absolute inset-0 grid grid-cols-2 grid-rows-2 opacity-20" },
+                                            h('div', { className: "border-r border-b border-gray-600" })
+                                        ),
+                                        h('div', {
+                                            className: "w-6 h-6 animate-bounce shadow-[0_0_15px_currentColor]",
+                                            style: {
+                                                backgroundColor: FRUIT_STYLES[settings.fruitType]?.color || '#fff',
+                                                color: FRUIT_STYLES[settings.fruitType]?.color || '#fff',
+                                                borderRadius: settings.fruitType === 'CYBER_ORB' ? '50%' : settings.fruitType === 'DATA_CUBE' ? '2px' : '0',
+                                                transform: settings.fruitType === 'QUANTUM_PYRAMID' ? 'rotate(45deg)' : 'none',
+                                                clipPath: settings.fruitType === 'QUANTUM_PYRAMID' ? 'polygon(50% 0%, 0% 100%, 100% 100%)' : 'none'
+                                            }
+                                        })
+                                    )
+                                )
+                            ),
+                            h('div', { className: "space-y-2" },
+                                h('div', { className: "flex justify-between" },
+                                    h('label', { className: "text-pink-400 font-['Rajdhani'] font-bold tracking-widest text-xs uppercase" }, "Concurrent Targets"),
+                                    h('span', { className: "text-white font-mono" }, settings.foodCount)
+                                ),
+                                h('input', {
+                                    type: "range",
+                                    min: "1",
+                                    max: "5",
+                                    value: settings.foodCount,
+                                    onChange: (e) => setSettings(s => ({ ...s, foodCount: parseInt(e.target.value) })),
+                                    className: "w-full h-1.5 bg-gray-800 rounded-lg appearance-none cursor-pointer accent-pink-500 hover:accent-pink-400"
+                                })
+                            )
+                        )
+                    ),
+                    h('div', { className: "h-px w-full bg-gradient-to-r from-transparent via-gray-700 to-transparent my-1" }),
+                    h('button', {
+                        onClick: startGame,
+                        className: "group relative w-full py-3 bg-cyan-900/20 overflow-hidden rounded-sm transition-all duration-300 hover:bg-cyan-900/40 border border-cyan-500/50 hover:border-cyan-400 shrink-0"
+                    },
+                        h('div', { className: "absolute inset-0 bg-cyan-400/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-out" }),
+                        h('span', { className: "relative z-10 font-['Orbitron'] font-black text-lg text-cyan-300 group-hover:text-white tracking-[0.3em] flex items-center justify-center gap-4" },
+                            h('span', { className: "animate-pulse" }, ">>>"),
+                            " ENGAGE SYSTEM ",
+                            h('span', { className: "animate-pulse" }, "<<<")
+                        )
+                    )
+                );
+
+            return h('div', {
+                className: "relative w-full h-full bg-black select-none overflow-hidden font-['Rajdhani']",
+                onTouchMove: handleTouchMove,
+                onMouseMove: handleMouseMove,
+                onMouseDown: (e) => handleInput(e.clientX, e.clientY)
+            },
+                h('div', { className: "scanlines" }),
+                h('div', { className: `absolute inset-0 z-0 transition-all duration-700 ${status !== GameStatus.PLAYING ? 'blur-md opacity-40 scale-105' : 'blur-none opacity-100 scale-100'}` },
+                    h(GameCanvas, { snakeRef, foodsRef, snakeLength, status, settings })
+                ),
+                h('div', { className: "absolute inset-0 z-10 pointer-events-none flex flex-col justify-between" },
+                    h('div', { className: `p-6 flex justify-between items-start transition-opacity duration-500 ${status === GameStatus.IDLE || status === GameStatus.CONFIG ? 'opacity-0' : 'opacity-100'}` },
+                        h('div', { className: "flex flex-col bg-black/40 backdrop-blur-md border-l-4 border-cyan-400 px-6 py-2 rounded-r-lg skew-x-[-10deg]" },
+                            h('span', { className: "text-cyan-400 text-xs font-bold tracking-widest skew-x-[10deg]" }, "CURRENT SCORE"),
+                            h('span', { className: "text-white text-3xl font-['Orbitron'] font-bold skew-x-[10deg] tracking-wider" }, score.toString().padStart(4, '0'))
+                        ),
+                        h('div', { className: "flex flex-col items-end bg-black/40 backdrop-blur-md border-r-4 border-pink-500 px-6 py-2 rounded-l-lg skew-x-[10deg]" },
+                            h('span', { className: "text-pink-500 text-xs font-bold tracking-widest skew-x-[-10deg]" }, "HIGH SCORE"),
+                            h('span', { className: "text-white text-3xl font-['Orbitron'] font-bold skew-x-[-10deg] tracking-wider" }, highScore.toString().padStart(4, '0'))
+                        )
+                    ),
+                    h('div', { className: "flex-1 flex items-center justify-center pointer-events-auto p-4" },
+                        status === GameStatus.IDLE && h('div', { className: "flex flex-col items-center" },
+                            h('div', { className: "relative mb-12 group" },
+                                h('h1', { className: "text-7xl md:text-9xl font-['Orbitron'] font-black text-transparent bg-clip-text bg-gradient-to-b from-cyan-300 to-blue-600 drop-shadow-[0_0_25px_rgba(0,255,255,0.5)] tracking-tighter" },
+                                    "NEON", h('br'), "SNAKE"
+                                ),
+                                h('div', { className: "absolute -inset-1 blur-xl bg-cyan-500/20 rounded-full animate-pulse z-[-1]" })
+                            ),
+                            h('button', {
+                                onClick: openConfig,
+                                className: "group relative px-12 py-4 bg-transparent overflow-hidden rounded-sm transition-all duration-300 hover:scale-105"
+                            },
+                                h('div', { className: "absolute inset-0 border-2 border-cyan-500/50 group-hover:border-cyan-400 skew-x-[-10deg] transition-colors" }),
+                                h('div', { className: "absolute inset-0 bg-cyan-500/10 group-hover:bg-cyan-400/20 skew-x-[-10deg] transition-colors" }),
+                                h('span', { className: "relative font-['Orbitron'] font-bold text-2xl text-cyan-300 group-hover:text-white tracking-[0.2em] flex items-center gap-3" },
+                                    h('span', { className: "w-2 h-2 bg-cyan-400 rounded-full animate-ping" }),
+                                    "INITIALIZE",
+                                    h('span', { className: "w-2 h-2 bg-cyan-400 rounded-full animate-ping" })
+                                )
+                            ),
+                            h('div', { className: "mt-8 text-cyan-500/50 font-mono text-sm tracking-widest uppercase" }, "System Ready // Version 3.1")
+                        ),
+                        status === GameStatus.CONFIG && renderConfigMenu(),
+                        status === GameStatus.GAME_OVER && h('div', { className: "relative w-full max-w-lg" },
+                            h('div', { className: "absolute -inset-2 bg-red-500/20 rounded-xl blur-xl animate-pulse" }),
+                            h('div', { className: "relative bg-black/80 backdrop-blur-xl border border-red-500/40 rounded-sm shadow-[0_0_30px_rgba(255,0,0,0.3)] overflow-hidden" },
+                                h('div', { className: "absolute inset-0 bg-[linear-gradient(rgba(255,0,0,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(255,0,0,0.05)_1px,transparent_1px)] bg-[size:20px_20px] opacity-30" }),
+                                h('div', { className: "absolute inset-0 bg-gradient-to-t from-red-900/40 to-transparent pointer-events-none" }),
+                                h('div', { className: "flex flex-col items-center p-10 z-10 relative" },
+                                    h('div', { className: "mb-6 text-center" },
+                                        h('h2', { className: "text-6xl md:text-7xl font-['Orbitron'] font-black text-red-500 tracking-tighter drop-shadow-[0_0_10px_rgba(255,0,0,0.8)] animate-pulse" },
+                                            "GAME", h('br'), "OVER"
+                                        ),
+                                        h('div', { className: "h-0.5 w-32 mx-auto bg-red-500/50 mt-2 shadow-[0_0_8px_rgba(255,0,0,0.8)]" })
+                                    ),
+                                    h('div', { className: "grid grid-cols-2 gap-px bg-red-900/30 w-full border border-red-500/20 mb-8 rounded-sm overflow-hidden" },
+                                        h('div', { className: "bg-black/40 p-6 flex flex-col items-center justify-center" },
+                                            h('span', { className: "text-red-400/60 font-['Rajdhani'] font-bold text-sm tracking-[0.2em] uppercase mb-1" }, "Score"),
+                                            h('span', { className: "text-4xl text-white font-['Orbitron'] font-bold" }, score)
+                                        ),
+                                        h('div', { className: "bg-black/40 p-6 flex flex-col items-center justify-center relative group" },
+                                            h('span', { className: "text-red-400/60 font-['Rajdhani'] font-bold text-sm tracking-[0.2em] uppercase mb-1" }, "Best"),
+                                            h('span', { className: "text-4xl text-red-100 font-['Orbitron'] font-bold" }, highScore),
+                                            score === highScore && score > 0 && h('div', { className: "absolute top-2 right-2 bg-red-500 text-black text-[0.6rem] font-black px-1.5 py-0.5 rounded-sm animate-bounce" }, "NEW REC")
+                                        )
+                                    ),
+                                    h('div', { className: "flex flex-col w-full gap-4" },
+                                        h('button', {
+                                            onClick: startGame,
+                                            className: "group/btn relative w-full h-14 bg-red-500/10 border border-red-500/50 hover:bg-red-500/20 hover:border-red-400 transition-all duration-300 overflow-hidden"
+                                        },
+                                            h('div', { className: "absolute inset-0 flex items-center justify-center gap-3 relative z-10" },
+                                                h('svg', { xmlns: "http://www.w3.org/2000/svg", className: "h-5 w-5 text-red-400 group-hover/btn:text-white transition-colors group-hover/btn:rotate-180 duration-500", fill: "none", viewBox: "0 0 24 24", stroke: "currentColor" },
+                                                    h('path', { strokeLinecap: "round", strokeLinejoin: "round", strokeWidth: 2, d: "M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" })
+                                                ),
+                                                h('span', { className: "font-['Orbitron'] font-bold text-red-400 text-lg tracking-[0.15em] group-hover/btn:text-white transition-colors" }, "RESTART")
+                                            ),
+                                            h('div', { className: "absolute inset-0 bg-red-600/80 transform -translate-x-full skew-x-[-20deg] group-hover/btn:translate-x-0 transition-transform duration-300 origin-left ease-out z-0" })
+                                        ),
+                                        h('button', {
+                                            onClick: goToMenu,
+                                            className: "relative w-full h-12 bg-transparent border border-red-500/20 hover:border-red-500/60 hover:bg-red-900/10 transition-all duration-300"
+                                        },
+                                            h('span', { className: "font-['Orbitron'] font-semibold text-red-500/60 text-sm tracking-[0.2em] hover:text-red-400 transition-colors" }, "MAIN MENU")
+                                        )
+                                    )
+                                )
+                            )
+                        )
+                    )
+                )
+            );
+        }
+
+        const rootElement = document.getElementById('root');
+        if (!rootElement) throw new Error("Could not find root element");
+        const root = ReactDOM.createRoot(rootElement);
+        root.render(h(React.StrictMode, null, h(App)));
+    </script>
+</body>
+</html>
